@@ -1,0 +1,28 @@
+import pyodbc
+
+# Assuming df is your DataFrame containing 'staff_id' and 'name' columns
+data = df[['staff_id', 'name']].values.tolist()
+
+# Connection string to your SQL Server
+conn_str = 'Driver={SQL Server};Server=your_server;Database=your_db;Trusted_Connection=yes;'
+conn = pyodbc.connect(conn_str)
+cursor = conn.cursor()
+
+# MERGE query for upsert (update if exists, insert if not)
+merge_query = """
+MERGE INTO your_table AS target
+USING (SELECT ? AS staff_id, ? AS name) AS source
+ON target.staff_id = source.staff_id
+WHEN MATCHED THEN
+    UPDATE SET target.name = source.name
+WHEN NOT MATCHED THEN
+    INSERT (staff_id, name) VALUES (source.staff_id, source.name);
+"""
+
+# Use executemany to perform the upsert for all rows in the DataFrame
+cursor.executemany(merge_query, data)
+conn.commit()
+
+# Close the connection
+cursor.close()
+conn.close()
