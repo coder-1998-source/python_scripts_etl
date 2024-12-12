@@ -9,7 +9,7 @@ data = {
 df = pd.DataFrame(data)
 
 # Filter to get rows where staffid is null and staffname is unique
-filtered_df = df[df['staffid'].isnull() & ~df.duplicated('staffname', keep=False)]
+filtered_df = df[df['staffid'].isnull() & ~df.duplicated('staffname', keep=False)].copy()
 
 # Convert filtered DataFrame to a list of lists for table display
 table_data = filtered_df.values.tolist()
@@ -17,13 +17,13 @@ table_data = filtered_df.values.tolist()
 # Define table headings
 headings = ['Staff Name', 'Staff ID']
 
-# Define layout with a table and input for updating staff ID
+# Define layout with a table, input for updating staff ID, and buttons
 layout = [
     [sg.Table(values=table_data, headings=headings, key='-TABLE-', auto_size_columns=True, justification='right',
               enable_events=True, vertical_scroll_only=True, size=(40, 10))],
     [sg.Text('Selected staff name:', size=(20, 1)), sg.InputText('', key='-SELECTED_NAME-', readonly=True)],
     [sg.Text('Update staff ID:', size=(20, 1)), sg.InputText('', key='-NEW_ID-')],
-    [sg.Button('Update Staff ID')]
+    [sg.Button('Update Staff ID Locally'), sg.Button('Confirm Changes')]
 ]
 
 # Create the window
@@ -43,17 +43,25 @@ while True:
         # Display selected staff name in input field
         window['-SELECTED_NAME-'].update(selected_staffname)
 
-    # When the user clicks "Update Staff ID"
-    elif event == 'Update Staff ID':
+    # Update staff ID locally in the filtered DataFrame
+    elif event == 'Update Staff ID Locally':
         new_staffid = values['-NEW_ID-']
         selected_staffname = values['-SELECTED_NAME-']
 
-        # Update the staff ID for the selected staff name in the original DataFrame
-        df.loc[(df['staffname'] == selected_staffname) & (df['staffid'].isnull()), 'staffid'] = new_staffid
+        # Update the staff ID for the selected staff name locally in filtered_df
+        filtered_df.loc[filtered_df['staffname'] == selected_staffname, 'staffid'] = new_staffid
         
-        # Refresh the filtered data
-        filtered_df = df[df['staffid'].isnull() & ~df.duplicated('staffname', keep=False)]
+        # Refresh the local table data
         table_data = filtered_df.values.tolist()
         window['-TABLE-'].update(values=table_data)
+
+    # Confirm and update changes back to the original DataFrame (df)
+    elif event == 'Confirm Changes':
+        # Update the original df with changes from filtered_df
+        for staffname in filtered_df['staffname'].unique():
+            updated_staffid = filtered_df.loc[filtered_df['staffname'] == staffname, 'staffid'].values[0]
+            df.loc[(df['staffname'] == staffname) & (df['staffid'].isnull()), 'staffid'] = updated_staffid
+        
+        sg.popup("Changes have been confirmed and saved back to the main data.")
 
 window.close()
