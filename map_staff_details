@@ -8,13 +8,16 @@ data = {
 }
 df = pd.DataFrame(data)
 
-# Convert DataFrame to a list of lists for table display
-table_data = df.values.tolist()
+# Filter to get rows where staffid is null and staffname is unique
+filtered_df = df[df['staffid'].isnull() & ~df.duplicated('staffname', keep=False)]
+
+# Convert filtered DataFrame to a list of lists for table display
+table_data = filtered_df.values.tolist()
 
 # Define table headings
 headings = ['Staff Name', 'Staff ID']
 
-# Define layout with a table, text input for copying staff name, and input for updating staff ID
+# Define layout with a table and input for updating staff ID
 layout = [
     [sg.Table(values=table_data, headings=headings, key='-TABLE-', auto_size_columns=True, justification='right',
               enable_events=True, vertical_scroll_only=True, size=(40, 10))],
@@ -34,24 +37,23 @@ while True:
 
     # When a row is selected in the table
     if event == '-TABLE-':
-        selected_row_index = values['-TABLE-'][0]  # Get the index of the selected row
-        selected_staffname = df.iloc[selected_row_index]['staffname']
-        current_staffid = df.iloc[selected_row_index]['staffid']
-
-        # Display selected staff name and current staff ID
+        selected_row_index = values['-TABLE-'][0]  # Get the index of the selected row in the filtered data
+        selected_staffname = filtered_df.iloc[selected_row_index]['staffname']
+        
+        # Display selected staff name in input field
         window['-SELECTED_NAME-'].update(selected_staffname)
-        window['-NEW_ID-'].update(current_staffid if current_staffid is not None else "")
 
     # When the user clicks "Update Staff ID"
     elif event == 'Update Staff ID':
         new_staffid = values['-NEW_ID-']
         selected_staffname = values['-SELECTED_NAME-']
 
-        # Update the staff ID for the selected staff name in the DataFrame
-        df.loc[df['staffname'] == selected_staffname, 'staffid'] = new_staffid
+        # Update the staff ID for the selected staff name in the original DataFrame
+        df.loc[(df['staffname'] == selected_staffname) & (df['staffid'].isnull()), 'staffid'] = new_staffid
         
-        # Refresh table data
-        table_data = df.values.tolist()
+        # Refresh the filtered data
+        filtered_df = df[df['staffid'].isnull() & ~df.duplicated('staffname', keep=False)]
+        table_data = filtered_df.values.tolist()
         window['-TABLE-'].update(values=table_data)
 
 window.close()
