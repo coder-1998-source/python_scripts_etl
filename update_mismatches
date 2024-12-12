@@ -1,0 +1,70 @@
+import pandas as pd
+import PySimpleGUI as sg
+from sqlalchemy import create_engine, text
+
+# Assuming your engine object is already created
+engine = create_engine('mssql+pyodbc://user:password@server/database?driver=ODBC+Driver+17+for+SQL+Server')
+
+# Sample DataFrame with blanks
+data = {
+    'country': ['USA', 'Canada', 'Mexico', 'UK'],
+    'correct_country': [None, 'Canada', None, None],
+    'region': [None, 'North America', 'North America', None],
+    'process': [None, 'Processed', 'Not Processed', None]
+}
+df = pd.DataFrame(data)
+
+# Step 1: Filter rows where 'correct_country', 'region', or 'process' are blank
+df_blank = df[df['correct_country'].isnull() | df['region'].isnull() | df['process'].isnull()]
+
+# Step 2: Store initial state for comparison
+df_initial = df_blank.copy()
+
+# Step 3: Create the PySimpleGUI layout with editable fields for blank values
+layout = []
+for index, row in df_blank.iterrows():
+    layout.append([
+        sg.Text(row['country']),  # Country as Text
+        sg.Combo(correct_country_choices, default_value=row['correct_country'], key=f'correct_country_{index}', readonly=True),
+        sg.Combo(region_choices, default_value=row['region'], key=f'region_{index}', readonly=True),
+        sg.Combo(process_choices, default_value=row['process'], key=f'process_{index}', readonly=True)
+    ])
+
+layout.append([sg.Button('Submit'), sg.Button('Cancel')])
+
+window = sg.Window('Update Data', layout)
+
+# Step 4: Handle user input and update the DataFrame
+event, values = window.read()
+
+if event == 'Submit':
+    # Update the DataFrame with user input
+    for index, row in df_blank.iterrows():
+        df.loc[index, 'correct_country'] = values[f'correct_country_{index}']
+        df.loc[index, 'region'] = values[f'region_{index}']
+        df.loc[index, 'process'] = values[f'process_{index}']
+    
+    # Step 5: Identify modified rows
+    modified_rows = df_blank[
+        (df_blank['correct_country'] != df_initial['correct_country']) |
+        (df_blank['region'] != df_initial['region']) |
+        (df_blank['process'] != df_initial['process'])
+    ]
+    
+    # Step 6: Insert the modified rows into the database
+    sql_insert = text("""
+        INSERT INTO your_table_name (country, correct_country, region, process)
+        VALUES (:country, :correct_country, :region, :process)
+    """)
+    
+    with engine.begin() as conn:  # Start a transaction
+        for index, row in modified_rows.iterrows():
+            conn.execute(sql_insert, 
+                         country=row['country'], 
+                         correct_country=row['correct_country'], 
+                         region=row['region'], 
+                         process=row['process'])
+    
+    sg.popup('Data inserted successfully into the database!')
+    
+window.close()
