@@ -1,35 +1,57 @@
 import PySimpleGUI as sg
 import pandas as pd
 
-# Sample DataFrame with duplicate staffnames
+# Sample DataFrame
 data = {
     'staffname': ['Alice', 'Bob', 'Charlie', 'Alice', 'Charlie'],
     'staffid': [None, '123', None, None, None]
 }
 df = pd.DataFrame(data)
 
-# Filter rows where 'staffid' is null and get unique staffnames
-null_staffid_rows = df[df['staffid'].isnull()]
-unique_staffnames = null_staffid_rows['staffname'].unique()
+# Convert DataFrame to a list of lists for table display
+table_data = df.values.tolist()
 
-# Prepare the layout dynamically for each unique missing staffid
-layout = []
-for staffname in unique_staffnames:
-    layout.append([sg.Text(f"Enter Staff ID for {staffname}:"), sg.InputText(key=staffname)])
+# Define table headings
+headings = ['Staff Name', 'Staff ID']
 
-layout.append([sg.Button('OK')])
+# Define layout with a table, text input for copying staff name, and input for updating staff ID
+layout = [
+    [sg.Table(values=table_data, headings=headings, key='-TABLE-', auto_size_columns=True, justification='right',
+              enable_events=True, vertical_scroll_only=True, size=(40, 10))],
+    [sg.Text('Selected staff name:', size=(20, 1)), sg.InputText('', key='-SELECTED_NAME-', readonly=True)],
+    [sg.Text('Update staff ID:', size=(20, 1)), sg.InputText('', key='-NEW_ID-')],
+    [sg.Button('Update Staff ID')]
+]
 
-# Show the popup with input fields for each unique staffname
-window = sg.Window("Enter Missing Staff IDs", layout)
-event, values = window.read()
+# Create the window
+window = sg.Window("Staff Information", layout)
+
+while True:
+    event, values = window.read()
+
+    if event == sg.WINDOW_CLOSED:
+        break
+
+    # When a row is selected in the table
+    if event == '-TABLE-':
+        selected_row_index = values['-TABLE-'][0]  # Get the index of the selected row
+        selected_staffname = df.iloc[selected_row_index]['staffname']
+        current_staffid = df.iloc[selected_row_index]['staffid']
+
+        # Display selected staff name and current staff ID
+        window['-SELECTED_NAME-'].update(selected_staffname)
+        window['-NEW_ID-'].update(current_staffid if current_staffid is not None else "")
+
+    # When the user clicks "Update Staff ID"
+    elif event == 'Update Staff ID':
+        new_staffid = values['-NEW_ID-']
+        selected_staffname = values['-SELECTED_NAME-']
+
+        # Update the staff ID for the selected staff name in the DataFrame
+        df.loc[df['staffname'] == selected_staffname, 'staffid'] = new_staffid
+        
+        # Refresh table data
+        table_data = df.values.tolist()
+        window['-TABLE-'].update(values=table_data)
+
 window.close()
-
-# Update the DataFrame with the entered staff IDs
-if event == 'OK':
-    for staffname, staffid in values.items():
-        if staffid:  # Only update if there's a value entered
-            # Update all rows with this staffname in the DataFrame
-            df.loc[df['staffname'] == staffname, 'staffid'] = staffid
-
-# Show the updated DataFrame
-print(df)
