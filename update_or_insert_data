@@ -1,28 +1,67 @@
+import pandas as pd
 import pyodbc
 
-# Assuming df is your DataFrame containing 'staff_id' and 'name' columns
-data = df[['staff_id', 'name']].values.tolist()
+# Sample DataFrames with different column names
+df = pd.DataFrame({
+    'col_a': [1, 2, 3],
+    'col_b': [4, 5, 6],
+    'col_c': [7, 8, 9],
+    'col_d': ['data1', 'data2', 'data3']
+})
 
-# Connection string to your SQL Server
-conn_str = 'Driver={SQL Server};Server=your_server;Database=your_db;Trusted_Connection=yes;'
-conn = pyodbc.connect(conn_str)
-cursor = conn.cursor()
+existing_data_df = pd.DataFrame({
+    'col_a2': [1, 2, 10],
+    'col_b2': [4, 5, 15],
+    'col_c2': [7, 8, 17],
+    'col_d2': ['old_data1', 'old_data2', 'old_data10']
+})
 
-# MERGE query for upsert (update if exists, insert if not)
-merge_query = """
-MERGE INTO your_table AS target
-USING (SELECT ? AS staff_id, ? AS name) AS source
-ON target.staff_id = source.staff_id
-WHEN MATCHED THEN
-    UPDATE SET target.name = source.name
-WHEN NOT MATCHED THEN
-    INSERT (staff_id, name) VALUES (source.staff_id, source.name);
-"""
+# Step 1: Merge df and existing_data_df based on the different column names
+merged_df = pd.merge(
+    existing_data_df, 
+    df[['col_a', 'col_b', 'col_c', 'col_d']], 
+    left_on=['col_a2', 'col_b2', 'col_c2'], 
+    right_on=['col_a', 'col_b', 'col_c'], 
+    how='left', 
+    suffixes=('_existing', '_df')
+)
 
-# Use executemany to perform the upsert for all rows in the DataFrame
-cursor.executemany(merge_query, data)
-conn.commit()
+# Step 2: Update col_d2 in existing_data_df with the matching data from col_d in df
+existing_data_df['col_d2'] = merged_df['col_d'].combine_first(existing_data_df['col_d2'])  # Update col_d2 if match found, keep old otherwise
 
-# Close the connection
-cursor.close()
-conn.close()
+# Step 3: Identify matched and unmatched rows
+matched_rows = merged_df[merged_df['col_d'].notna()]  # Rows that matched
+new_rows = merged_df[merged_df['col_d'].isna()]       # Rows that didn't match and are new
+
+# Connect to the SQL database
+connection = pyodbc.connect(
+    'Driver={SQL Server};'
+    'Server=your_server;'
+    'Database=your_database;'
+    'Trusted_Connection=yes;'
+)
+cursor = connection.cursor()
+
+# Step 4: Update matched rows in SQL
+for index, row in matched_rows.iterrows():
+    query_update = f"""
+    UPDATE your_sql_table
+    SET col_d2 = '{row['col_d']}'
+    WHERE col_a2 = {row['col_a2']} AND col_b2 = {row['col_b2']} AND col_c2 = {row['col_c2']}
+    """
+    cursor.execute(query_update)
+
+# Step 5: Insert new rows into SQL
+for index, row in new_rows.iterrows():
+    query_insert = f"""
+    INSERT INTO your_sql_table (col_a2, col_b2, col_c2, col_d2)
+    VALUES ({row['col_a2']}, {row['col_b2']}, {row['col_c2']}, '{row['col_d2']}')
+    """
+    cursor.execute(query_insert)
+
+# Commit the changes and close the connection
+connection.commit()
+connection.close()
+
+# Show updated existing_data_df with changes
+print(existing_data_df)
