@@ -18,19 +18,23 @@ existing_data_df = pd.DataFrame({
 
 # Step 1: Merge df and existing_data_df based on the different column names (except col_d)
 merged_df = pd.merge(
-    existing_data_df, 
-    df[['col_a', 'col_b', 'col_c', 'col_d']], 
-    left_on=['col_a2', 'col_b2', 'col_c2'], 
-    right_on=['col_a', 'col_b', 'col_c'], 
-    how='left'
+    df, 
+    existing_data_df[['col_a2', 'col_b2', 'col_c2', 'col_d']], 
+    left_on=['col_a', 'col_b', 'col_c'], 
+    right_on=['col_a2', 'col_b2', 'col_c2'], 
+    how='left',
+    suffixes=('', '_existing')
 )
 
-# Step 2: Update col_d in existing_data_df with the matching data from df where match is found
-existing_data_df['col_d'] = merged_df['col_d_y'].combine_first(existing_data_df['col_d'])  # Update col_d if match found, keep old otherwise
+# Step 2: Update col_d in df with the matching data from existing_data_df where match is found
+df['col_d'] = merged_df['col_d_existing'].combine_first(df['col_d'])  # Update col_d in df if match found
 
-# Step 3: Identify matched and unmatched rows
-matched_rows = merged_df[merged_df['col_d_y'].notna()]  # Rows that matched
-new_rows = merged_df[merged_df['col_d_y'].isna()]       # Rows that didn't match and are new
+# Step 3: Identify the new rows (i.e., rows in df that didn't match anything in existing_data_df)
+new_rows = merged_df[merged_df['col_a2'].isna()]  # Unmatched rows in df (based on merge)
+df_new_rows = new_rows[['col_a', 'col_b', 'col_c', 'col_d']]  # Extract only relevant columns for new rows
+
+# Step 4: Append the new rows to df (optional step depending on your logic)
+df = pd.concat([df, df_new_rows], ignore_index=True)
 
 # Connect to the SQL database
 connection = pyodbc.connect(
@@ -41,20 +45,21 @@ connection = pyodbc.connect(
 )
 cursor = connection.cursor()
 
-# Step 4: Update matched rows in SQL
-for index, row in matched_rows.iterrows():
-    query_update = f"""
-    UPDATE your_sql_table
-    SET col_d = '{row['col_d_y']}'
-    WHERE col_a2 = {row['col_a2']} AND col_b2 = {row['col_b2']} AND col_c2 = {row['col_c2']}
-    """
-    cursor.execute(query_update)
+# Step 5: Update matched rows in the SQL database
+for index, row in merged_df.iterrows():
+    if pd.notna(row['col_d_existing']):
+        query_update = f"""
+        UPDATE your_sql_table
+        SET col_d = '{row['col_d_existing']}'
+        WHERE col_a2 = {row['col_a']} AND col_b2 = {row['col_b']} AND col_c2 = {row['col_c']}
+        """
+        cursor.execute(query_update)
 
-# Step 5: Insert new rows into SQL
-for index, row in new_rows.iterrows():
+# Step 6: Insert new rows into the SQL database
+for index, row in df_new_rows.iterrows():
     query_insert = f"""
     INSERT INTO your_sql_table (col_a2, col_b2, col_c2, col_d)
-    VALUES ({row['col_a2']}, {row['col_b2']}, {row['col_c2']}, '{row['col_d']}')
+    VALUES ({row['col_a']}, {row['col_b']}, {row['col_c']}, '{row['col_d']}')
     """
     cursor.execute(query_insert)
 
@@ -62,5 +67,5 @@ for index, row in new_rows.iterrows():
 connection.commit()
 connection.close()
 
-# Show updated existing_data_df with changes
-print(existing_data_df)
+# Display the updated df
+print(df)
