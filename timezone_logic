@@ -1,0 +1,39 @@
+import pytz
+from datetime import datetime
+import PySimpleGUI as sg
+
+# Function to get formatted timezone names with current time
+def get_timezones_with_current_time():
+    timezones_with_time = ["Use System Time (Default)"]
+    for tz in pytz.all_timezones:
+        timezone = pytz.timezone(tz)
+        current_time = datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S')
+        timezones_with_time.append(f"{tz} - {current_time}")
+    return timezones_with_time
+
+# Generate the list of timezones with their current time
+timezones_with_time = get_timezones_with_current_time()
+
+layout = [
+    [sg.Text("Select Timezone"), sg.Combo(timezones_with_time, size=(50, 20), key='timezone', default_value="Use System Time (Default)")],
+    [sg.Button("Submit")]
+]
+
+window = sg.Window("Timezone Selector", layout)
+
+while True:
+    event, values = window.read()
+    if event == sg.WIN_CLOSED:
+        break
+    if event == "Submit":
+        selected_timezone_with_time = values['timezone']
+        if selected_timezone_with_time == "Use System Time (Default)":
+            current_time = datetime.now()
+            sg.popup(f"System Time: {current_time}")
+        else:
+            selected_timezone = selected_timezone_with_time.split(" - ")[0]  # Extract timezone name
+            tz = pytz.timezone(selected_timezone)
+            current_time_in_tz = datetime.now(tz)
+            sg.popup(f"Current time in {selected_timezone}: {current_time_in_tz}")
+
+window.close()
