@@ -1,0 +1,37 @@
+import os
+import re
+from datetime import datetime, timedelta
+
+# Path to NAS directory
+nas_directory = "/path/to/nas/"
+
+# Get today's date
+today = datetime.now().date()
+
+# Find most recent Sunday (current week Sunday)
+days_since_sunday = today.weekday() + 1 if today.weekday() != 6 else 0
+current_sunday = today - timedelta(days=days_since_sunday)
+
+# Previous Sunday (7 days before current_sunday)
+previous_sunday = current_sunday - timedelta(days=7)
+
+# Regex to match files like: filename_2025-05-11_2025-05-18
+pattern = re.compile(r"filename_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})")
+
+# Find matching files
+matching_files = []
+for filename in os.listdir(nas_directory):
+    match = pattern.match(filename)
+    if match:
+        start_date_str, end_date_str = match.groups()
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+        # Check for exact match with last week's Sunday to this week's Sunday
+        if start_date == previous_sunday and end_date == current_sunday:
+            matching_files.append(os.path.join(nas_directory, filename))
+
+# Output
+print("Matching files for last full week (Sunday to Sunday):")
+for file in matching_files:
+    print(file)
