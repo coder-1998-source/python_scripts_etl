@@ -1,0 +1,272 @@
+Perfect! Here’s a **ready-to-deploy Azure Django setup** for sending Outlook emails with **SSO-like experience**, where users hardly need to type credentials. I’ll break it into **steps for deployment, configuration, and code**.
+
+---
+
+# **Step 0: Prerequisites**
+
+1. Django project (`django-admin startproject outlook_app`)
+2. Python >= 3.9
+3. Packages:
+
+```bash
+pip install django msal requests gunicorn
+```
+
+4. Azure account & Azure App Service for hosting
+5. Azure AD tenant (Microsoft 365) with users who have Outlook mailboxes
+
+---
+
+# **Step 1: Azure AD App Registration**
+
+1. Go to **Azure Portal → Azure Active Directory → App registrations → New registration**
+2. Name: `AzureDjangoOutlookApp`
+3. Supported account types: *Accounts in this organizational directory only* (or multi-tenant if external users)
+4. Redirect URI (Web): `https://yourapp.azurewebsites.net/microsoft/callback/`
+5. Click **Register**
+6. Copy **Client ID** and **Tenant ID**
+7. **Certificates & Secrets → New client secret** → Copy value
+8. **API Permissions → Microsoft Graph → Delegated Permissions**:
+
+   * `Mail.Send`, `User.Read`, `offline_access`
+9. Click **Grant admin consent**
+
+---
+
+# **Step 2: Django Settings**
+
+```python
+# settings.py
+import os
+
+MICROSOFT = {
+    "CLIENT_ID": os.environ.get("MICROSOFT_CLIENT_ID"),
+    "CLIENT_SECRET": os.environ.get("MICROSOFT_CLIENT_SECRET"),
+    "TENANT_ID": os.environ.get("MICROSOFT_TENANT_ID"),
+    "AUTHORITY": f"https://login.microsoftonline.com/common",
+    "REDIRECT_URI": os.environ.get("MICROSOFT_REDIRECT_URI"),
+    "SCOPES": ["User.Read", "Mail.Send", "offline_access"],
+}
+```
+
+> **Environment variables** in Azure App Service:
+
+```
+MICROSOFT_CLIENT_ID
+MICROSOFT_CLIENT_SECRET
+MICROSOFT_TENANT_ID
+MICROSOFT_REDIRECT_URI
+```
+
+---
+
+# **Step 3: Model for storing tokens**
+
+```python
+# models.py
+from django.db import models
+from django.contrib.auth.models import User
+from django.utils import timezone
+
+class OutlookToken(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    expires_at = models.DateTimeField(default=timezone.now)
+```
+
+---
+
+# **Step 4: MSAL Helper**
+
+```python
+# utils/msal_helper.py
+from msal import ConfidentialClientApplication
+from django.conf import settings
+
+def get_msal_app():
+    return ConfidentialClientApplication(
+        client_id=settings.MICROSOFT["CLIENT_ID"],
+        client_credential=settings.MICROSOFT["CLIENT_SECRET"],
+        authority=settings.MICROSOFT["AUTHORITY"]
+    )
+```
+
+---
+
+# **Step 5: OAuth2 Views**
+
+```python
+# views.py
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.conf import settings
+from .models import OutlookToken
+from .utils.msal_helper import get_msal_app
+import requests, datetime
+
+def outlook_login(request):
+    app = get_msal_app()
+    auth_url = app.get_authorization_request_url(
+        scopes=settings.MICROSOFT["SCOPES"],
+        redirect_uri=settings.MICROSOFT["REDIRECT_URI"]
+    )
+    return redirect(auth_url)
+
+def outlook_callback(request):
+    code = request.GET.get("code")
+    app = get_msal_app()
+    result = app.acquire_token_by_authorization_code(
+        code,
+        scopes=settings.MICROSOFT["SCOPES"],
+        redirect_uri=settings.MICROSOFT["REDIRECT_URI"]
+    )
+    if "access_token" in result:
+        expires_in = int(result["expires_in"])
+        expires_at = timezone.now() + datetime.timedelta(seconds=expires_in)
+        OutlookToken.objects.update_or_create(
+            user=request.user,
+            defaults={
+                "access_token": result["access_token"],
+                "refresh_token": result.get("refresh_token"),
+                "expires_at": expires_at
+            }
+        )
+        return redirect("compose_email")
+    return render(request, "error.html", {"error": result.get("error_description")})
+```
+
+---
+
+# **Step 6: Token Helper**
+
+```python
+def get_access_token(user):
+    token = OutlookToken.objects.get(user=user)
+    if token.expires_at <= timezone.now():
+        app = get_msal_app()
+        result = app.acquire_token_by_refresh_token(
+            token.refresh_token,
+            scopes=settings.MICROSOFT["SCOPES"]
+        )
+        token.access_token = result["access_token"]
+        token.refresh_token = result.get("refresh_token", token.refresh_token)
+        token.expires_at = timezone.now() + datetime.timedelta(seconds=int(result["expires_in"]))
+        token.save()
+    return token.access_token
+```
+
+---
+
+# **Step 7: Email Operations**
+
+```python
+def create_draft(user, subject, body, to_list, cc_list=[]):
+    token = get_access_token(user)
+    url = "https://graph.microsoft.com/v1.0/me/messages"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "subject": subject,
+        "body": {"contentType": "Text", "content": body},
+        "toRecipients": [{"emailAddress":{"address":r}} for r in to_list],
+        "ccRecipients": [{"emailAddress":{"address":r}} for r in cc_list]
+    }
+    r = requests.post(url, json=payload, headers=headers)
+    if r.status_code in (200,201): return r.json()["id"]
+    else: raise Exception(r.text)
+
+def send_email(user, subject, body, to_list, cc_list=[]):
+    token = get_access_token(user)
+    url = "https://graph.microsoft.com/v1.0/me/sendMail"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "message": {
+            "subject": subject,
+            "body":{"contentType":"Text","content":body},
+            "toRecipients":[{"emailAddress":{"address":r}} for r in to_list],
+            "ccRecipients":[{"emailAddress":{"address":r}} for r in cc_list]
+        },
+        "saveToSentItems":"true"
+    }
+    r = requests.post(url, json=payload, headers=headers)
+    if r.status_code not in (200,202): raise Exception(r.text)
+    return r.status_code
+```
+
+---
+
+# **Step 8: Email Form View**
+
+```python
+def compose_email(request):
+    if request.method=="POST":
+        subject = request.POST["subject"]
+        body = request.POST["body"]
+        to_list = [e.strip() for e in request.POST["to_emails"].split(",")]
+        cc_list = [e.strip() for e in request.POST.get("cc_emails","").split(",") if e]
+        draft_id = create_draft(request.user, subject, body, to_list, cc_list)
+        return render(request,"success.html",{"draft_id":draft_id})
+    return render(request,"compose.html")
+```
+
+---
+
+# **Step 9: URLs**
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("microsoft/login/", views.outlook_login, name="outlook_login"),
+    path("microsoft/callback/", views.outlook_callback, name="outlook_callback"),
+    path("compose/", views.compose_email, name="compose_email"),
+]
+```
+
+---
+
+# **Step 10: HTML Form**
+
+```html
+<form method="post">{% csrf_token %}
+<label>Subject:</label><input name="subject"><br>
+<label>Body:</label><textarea name="body"></textarea><br>
+<label>To (comma separated):</label><input name="to_emails"><br>
+<label>CC (optional):</label><input name="cc_emails"><br>
+<button type="submit">Create Draft</button>
+</form>
+```
+
+---
+
+# **Step 11: Deployment to Azure**
+
+1. Push code to Azure Web App (GitHub or Zip deployment)
+2. Set environment variables in Azure App Service (CLIENT\_ID, CLIENT\_SECRET, TENANT\_ID, REDIRECT\_URI)
+3. Make sure **HTTPS** is enabled (Azure App Service provides SSL automatically)
+
+---
+
+# **Step 12: SSO Experience**
+
+* If users are **on corporate Azure AD domain** and already logged in on Windows/Outlook:
+
+  * Microsoft login page may **skip password prompt**.
+  * Users only need to click **“Accept”** for first-time consent.
+* After that, tokens are stored in your database, and your app can **create drafts or send emails silently**.
+
+---
+
+✅ **Result:**
+
+* Users log in once (or a few clicks with SSO).
+* Your web app can **create drafts or send emails** directly from their Outlook mailbox.
+* No passwords stored in your app.
+* Hosted securely on Azure.
+
+---
+
+I can also provide a **diagram showing OAuth2 flow with SSO, token storage, and Graph API calls** — it helps visualize what happens behind the scenes.
+
+Do you want me to make that diagram?
