@@ -1,0 +1,20 @@
+document.addEventListener("DOMContentLoaded", function () {
+  const regionSelect = document.getElementById("region-select");
+  const countrySelect = document.getElementById("country-select");
+
+  regionSelect.addEventListener("change", function () {
+    const selectedRegion = this.value.trim(); // trim spaces
+
+    // Clear previous countries
+    countrySelect.innerHTML = '<option value="">-- Select Country --</option>';
+
+    if (selectedRegion && regionCountryDict[selectedRegion]) {
+      regionCountryDict[selectedRegion].forEach(country => {
+        const option = document.createElement("option");
+        option.value = country;
+        option.textContent = country;
+        countrySelect.appendChild(option);
+      });
+    }
+  });
+});
