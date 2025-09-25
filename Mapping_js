@@ -1,0 +1,33 @@
+document.addEventListener("DOMContentLoaded", function () {
+  const reviewTab = document.getElementById("review-tab");
+  const regionSelect = document.getElementById("region-select");
+  const countrySelect = document.getElementById("country-select");
+
+  // Example: Show review tab when user clicks "Review" button
+  const reviewButton = document.getElementById("review-button");
+  if (reviewButton && reviewTab) {
+    reviewButton.addEventListener("click", function () {
+      reviewTab.style.display = "block"; // Show the review tab
+    });
+  }
+
+  // Update market/country list when a region is selected
+  if (regionSelect && countrySelect) {
+    regionSelect.addEventListener("change", function () {
+      const selectedRegion = this.value;
+
+      // Clear previous options
+      countrySelect.innerHTML = '<option value="">-- Select Market --</option>';
+
+      // Populate new options
+      if (selectedRegion && regionCountryDict[selectedRegion]) {
+        regionCountryDict[selectedRegion].forEach(function (country) {
+          const option = document.createElement("option");
+          option.value = country;
+          option.textContent = country;
+          countrySelect.appendChild(option);
+        });
+      }
+    });
+  }
+});
