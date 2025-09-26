@@ -1,0 +1,78 @@
+Ah! Now I understand perfectly ✅ — you want the **icon on the left**, and it should be **vertically centered relative to the text block** (top text + number) on the right.
+
+Here’s a clean solution:
+
+---
+
+### HTML
+
+```html
+<div class="item">
+    <div class="icon">
+        <img src="icon.png" alt="icon" />
+    </div>
+    <div class="text">
+        <div class="top-text">Top Text</div>
+        <div class="number">123</div>
+    </div>
+</div>
+```
+
+---
+
+### CSS
+
+```css
+.item {
+    display: flex;               /* horizontal layout: icon left, text right */
+    align-items: center;         /* vertical center icon relative to text */
+    gap: 10px;                   /* space between icon and text */
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    width: 250px;                /* adjust as needed */
+}
+
+.icon img {
+    width: 40px;
+    height: 40px;
+    display: block;              /* remove inline spacing issues */
+}
+
+.text {
+    display: flex;
+    flex-direction: column;      /* stack top text above number */
+    justify-content: center;     /* vertical center text block if needed */
+}
+
+.top-text {
+    font-size: 14px;
+    color: #555;
+}
+
+.number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #000;
+}
+```
+
+---
+
+### ✅ How it works
+
+```
+[ICON]  Top Text
+        123
+```
+
+* Icon is on the **left**.
+* Text block (top text + number) is on the **right**.
+* Icon is **centered vertically** relative to the text block.
+* Works for multiple rows, responsive heights, and multi-line text.
+
+---
+
+If you want, I can create a **dynamic version** where multiple items are generated from JS data, each with its own **icon, top text, and number**, all perfectly aligned left and vertically centered.
+
+Do you want me to do that?
