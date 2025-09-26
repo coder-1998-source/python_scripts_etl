@@ -1,0 +1,37 @@
+// Master dictionary (example structure)
+const data = {
+  1: {
+    values: ["met", "na", "not met"],
+    reasons: ["None", "Reason A", "Reason B", "Reason C"]
+  }
+};
+
+const valueSelect = document.getElementById("valueSelect");
+const reasonSelect = document.getElementById("reasonSelect");
+
+function updateReasons(selectedValue) {
+  const reasons = data[1].reasons;
+  let filtered = [];
+
+  if (selectedValue === "met" || selectedValue === "na") {
+    filtered = ["None"];
+  } else if (selectedValue === "not met") {
+    filtered = reasons.filter(r => r !== "None");
+  }
+
+  // Clear old options
+  reasonSelect.innerHTML = "";
+
+  // Populate new options
+  filtered.forEach(reason => {
+    let opt = document.createElement("option");
+    opt.value = reason;
+    opt.textContent = reason;
+    reasonSelect.appendChild(opt);
+  });
+}
+
+// Attach event listener
+valueSelect.addEventListener("change", function () {
+  updateReasons(this.value);
+});
