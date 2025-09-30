@@ -1,0 +1,43 @@
+<form id="myForm" method="POST">
+  {% csrf_token %}
+  <label>Country:</label>
+  <select name="country" class="dropdown" required>
+    <option value="">-- Select Country --</option>
+    <option value="India">India</option>
+    <option value="USA">USA</option>
+  </select>
+
+  <label>Region:</label>
+  <select name="region" class="dropdown" required>
+    <option value="">-- Select Region --</option>
+    <option value="Asia">Asia</option>
+    <option value="Europe">Europe</option>
+  </select>
+
+  <label>Process:</label>
+  <select name="process" class="dropdown" required>
+    <option value="">-- Select Process --</option>
+    <option value="abc">abc</option>
+    <option value="xyz">xyz</option>
+  </select>
+
+  <button type="submit">Submit</button>
+</form>
+
+<script>
+document.getElementById("myForm").addEventListener("submit", function(event) {
+    let dropdowns = document.querySelectorAll(".dropdown");
+    let allSelected = true;
+
+    dropdowns.forEach(dd => {
+        if (dd.value === "") {
+            allSelected = false;
+        }
+    });
+
+    if (!allSelected) {
+        alert("⚠️ Please select all dropdowns before submitting!");
+        event.preventDefault();  // stop form from submitting
+    }
+});
+</script>
