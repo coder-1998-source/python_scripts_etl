@@ -1,0 +1,20 @@
+document.getElementById("myForm").addEventListener("submit", function(e) {
+    e.preventDefault(); // stop page reload
+
+    let value = document.getElementById("mySelect").value;
+    let csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    fetch("{% url 'your_view_name' %}", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken
+        },
+        body: JSON.stringify({ mySelect: value })
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log("Response:", data);
+        // dropdown stays as is since page didn’t reload
+    });
+});
