@@ -1,0 +1,126 @@
+Perfect 👍 Let’s replace the plain `alert()` popup with a **beautiful modal popup** that appears **after successful upload**, showing your message and a **“Continue” button** that closes it and returns the user to the main page — all without reloading again.
+
+Here’s the complete working setup 👇
+
+---
+
+## 🧩 **views.py**
+
+```python
+from django.shortcuts import render
+
+def upload_view(request):
+    context = {}
+
+    if request.method == "POST":
+        # Your main upload logic here
+        # Example:
+        # file = request.FILES.get('file')
+        # process_file(file)
+        context['message'] = "✅ Data uploaded successfully!"
+
+    return render(request, "htmlpage.html", context)
+```
+
+---
+
+## 🎨 **htmlpage.html**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Page</title>
+    <style>
+        /* Modal background */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Modal content */
+        .modal-content {
+            background-color: white;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            min-width: 300px;
+            max-width: 400px;
+        }
+
+        .modal button {
+            background-color: #007bff;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .modal button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload Example</h1>
+
+    <form method="POST" enctype="multipart/form-data">
+        {% csrf_token %}
+        <button type="submit">Upload Data</button>
+    </form>
+
+    <!-- Modal HTML -->
+    <div id="messageModal" class="modal">
+        <div class="modal-content">
+            <p id="modalText"></p>
+            <button id="continueBtn">Continue</button>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const message = "{{ message|default:''|escapejs }}";
+
+            if (message) {
+                const modal = document.getElementById("messageModal");
+                const modalText = document.getElementById("modalText");
+                const continueBtn = document.getElementById("continueBtn");
+
+                modalText.textContent = message;
+                modal.style.display = "flex"; // Show modal
+
+                continueBtn.onclick = function() {
+                    modal.style.display = "none"; // Hide modal on continue
+                    // Optionally redirect or refresh page here if needed:
+                    // window.location.href = window.location.pathname;
+                };
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+---
+
+### ✅ **What Happens**
+
+1. User clicks **Upload Data** → Django processes in POST.
+2. Django re-renders the **same page** with a success `message`.
+3. On page load, JS detects the message and shows a **modal popup**.
+4. User clicks **Continue**, and the modal disappears (or you can redirect).
+
+---
+
+Would you like me to modify this slightly so that clicking **Continue** automatically redirects back to your **main UI page** instead of just closing the modal?
