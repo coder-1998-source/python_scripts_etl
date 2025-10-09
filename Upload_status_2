@@ -1,0 +1,162 @@
+Perfect 👍 Let’s enhance it so that **when the user clicks “Continue”**, they are automatically redirected back to your **main UI page (e.g., `/home/`)**.
+
+Here’s your complete working setup — same modal logic, but now the **Continue** button redirects instead of just closing the popup.
+
+---
+
+## ✅ **views.py**
+
+```python
+from django.http import JsonResponse
+from django.shortcuts import render
+
+def upload_view(request):
+    if request.method == "POST":
+        # --- Your main logic here ---
+        # Example:
+        # process_file(request.FILES.get('file'))
+        # or data = json.loads(request.body)
+        # do something with data
+        return JsonResponse({"message": "✅ Data uploaded successfully!"})
+
+    return render(request, "htmlpage.html")
+```
+
+---
+
+## 🎨 **htmlpage.html**
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Page</title>
+    <style>
+        /* Modal background overlay */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Modal content box */
+        .modal-content {
+            background-color: #fff;
+            padding: 25px 35px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            max-width: 400px;
+        }
+
+        .modal-content p {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .modal button {
+            background-color: #007bff;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .modal button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload Example</h1>
+
+    <button id="uploadBtn">Upload Data</button>
+
+    <!-- Modal -->
+    <div id="messageModal" class="modal">
+        <div class="modal-content">
+            <p id="modalText"></p>
+            <button id="continueBtn">Continue</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Helper: CSRF token fetch ---
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let cookie of cookies) {
+                    cookie = cookie.trim();
+                    if (cookie.startsWith(name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // --- Upload button click event ---
+        document.getElementById("uploadBtn").addEventListener("click", function() {
+            const payload = { name: "Hyma", process: "Upload" };
+
+            fetch("/upload/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCookie('csrftoken')
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                showModal(data.message);
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                showModal("❌ Upload failed. Please try again.");
+            });
+        });
+
+        // --- Show modal popup and redirect on continue ---
+        function showModal(message) {
+            const modal = document.getElementById("messageModal");
+            const modalText = document.getElementById("modalText");
+            const continueBtn = document.getElementById("continueBtn");
+
+            modalText.textContent = message;
+            modal.style.display = "flex";
+
+            continueBtn.onclick = function() {
+                modal.style.display = "none";
+                // ✅ Redirect to your main UI page
+                window.location.href = "/home/";  // Change this to your actual page path
+            };
+        }
+    </script>
+</body>
+</html>
+```
+
+---
+
+### ✅ **How It Works**
+
+1. User clicks **Upload Data** → JS sends POST via `fetch()`.
+2. Django processes and returns JSON `{ "message": "✅ Data uploaded successfully!" }`.
+3. Modal appears with success message.
+4. User clicks **Continue** → browser automatically redirects to `/home/`.
+
+---
+
+Would you like the **redirect URL (`/home/`)** to be **dynamic**, i.e., Django sends it back as part of the JSON (so it can differ by user or condition)?
