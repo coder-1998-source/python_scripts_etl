@@ -1,0 +1,190 @@
+Ah, perfect — you want this flow:
+
+1. User clicks **Upload** → modal with progress bar shows.
+2. Upload completes → modal shows **uploaded data** (optional preview).
+3. User clicks **Continue** → modal closes and the **page goes back to the main UI** as if nothing happened — no extra data rendered in the page, just revert to the UI before the upload.
+
+Here’s a clean implementation:
+
+---
+
+## 1️⃣ HTML + Modal
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload with Progress</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* Modal overlay */
+        #uploadModal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        #uploadModalContent {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            text-align: center;
+        }
+
+        #progressBar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        #progressBar div {
+            height: 20px;
+            width: 0;
+            background-color: #4caf50;
+            text-align: center;
+            color: white;
+        }
+
+        #modalData {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        #continueBtn {
+            margin-top: 15px;
+            padding: 5px 10px;
+            cursor: pointer;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h3>Main Page UI</h3>
+    <p>Everything here is the main page content. After upload, we just revert to this.</p>
+    <input type="file" id="fileInput">
+    <button id="uploadBtn">Upload</button>
+
+    <!-- Modal -->
+    <div id="uploadModal">
+        <div id="uploadModalContent">
+            <h4 id="modalTitle">Uploading...</h4>
+            <div id="progressBar"><div></div></div>
+            <p id="progressText">0%</p>
+            <div id="modalData"></div>
+            <button id="continueBtn">Continue</button>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            $('#uploadBtn').click(function() {
+                var file = $('#fileInput')[0].files[0];
+                if(!file) { alert('Select a file first'); return; }
+
+                var formData = new FormData();
+                formData.append('file', file);
+
+                // Show modal & reset
+                $('#uploadModal').show();
+                $('#modalTitle').text('Uploading...');
+                $('#progressBar div').css('width','0%');
+                $('#progressText').text('0%').show();
+                $('#modalData').empty();
+                $('#continueBtn').hide();
+
+                // AJAX upload
+                $.ajax({
+                    xhr: function() {
+                        var xhr = new window.XMLHttpRequest();
+                        xhr.upload.addEventListener('progress', function(e) {
+                            if(e.lengthComputable) {
+                                var percent = Math.round((e.loaded / e.total) * 100);
+                                $('#progressBar div').css('width', percent+'%');
+                                $('#progressText').text(percent+'%');
+                            }
+                        });
+                        return xhr;
+                    },
+                    url: '/upload-file/',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    headers: {'X-CSRFToken': '{{ csrf_token }}'},
+                    success: function(response) {
+                        if(response.status === 'success') {
+                            $('#modalTitle').text('Upload Complete!');
+                            $('#progressText').hide();
+                            $('#progressBar').hide();
+
+                            // Optional: show preview inside modal
+                            $('#modalData').html('<pre>Upload finished successfully.</pre>');
+
+                            // Show Continue button
+                            $('#continueBtn').show();
+                        } else {
+                            alert(response.message);
+                            $('#uploadModal').hide();
+                        }
+                    },
+                    error: function() {
+                        alert('Upload failed!');
+                        $('#uploadModal').hide();
+                    }
+                });
+            });
+
+            // Continue button: just close the modal to revert to main page UI
+            $('#continueBtn').click(function() {
+                $('#uploadModal').hide();
+                // Page reverts automatically, no extra rendering
+            });
+        });
+    </script>
+</body>
+</html>
+```
+
+---
+
+## 2️⃣ Django View (`views.py`)
+
+Same as before:
+
+```python
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+
+@csrf_exempt
+def upload_file(request):
+    if request.method == "POST" and request.FILES.get('file'):
+        uploaded_file = request.FILES['file']
+        # Optionally process file here
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'status': 'error', 'message': 'No file uploaded'})
+```
+
+---
+
+### ✅ Flow:
+
+1. Upload starts → progress bar shows inside modal.
+2. Upload completes → modal shows “Upload Complete” + **Continue** button.
+3. User clicks **Continue** → modal closes → main page UI is visible as before.
+
+No extra data is rendered outside the modal; the page **reverts back automatically**.
+
+---
+
+If you want, I can also show a **version where the modal automatically closes when upload completes** without the Continue button — simpler UX.
+
+Do you want me to do that?
