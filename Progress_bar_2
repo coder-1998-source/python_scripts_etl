@@ -1,0 +1,126 @@
+Ah! That simplifies things a lot ✅ — since the file is automatically picked from NAS, there’s **no need for a file input** or validation. You just need the **Upload button to trigger the AJAX call**, show the modal with progress, and then handle the Continue button.
+
+Here’s a clean version tailored for your case:
+
+---
+
+## **HTML: Upload Button + Modal**
+
+```html
+<button id="uploadBtn">Upload from NAS</button>
+
+<!-- Modal -->
+<div id="uploadModal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5);">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; padding:20px; border-radius:8px; width:400px; text-align:center;">
+        <h4 id="modalTitle">Uploading...</h4>
+        <div id="progressBar" style="width:100%; background:#f3f3f3; border-radius:5px; overflow:hidden; margin-top:10px;">
+            <div style="height:20px; width:0; background:#4caf50; text-align:center; color:white;"></div>
+        </div>
+        <p id="progressText">0%</p>
+        <div id="modalData"></div>
+        <button id="continueBtn" style="display:none; margin-top:10px;">Continue</button>
+    </div>
+</div>
+```
+
+---
+
+## **JavaScript: AJAX Upload + Modal**
+
+```javascript
+document.getElementById('uploadBtn').onclick = function() {
+    // Show modal
+    var modal = document.getElementById('uploadModal');
+    modal.style.display = 'block';
+    document.getElementById('modalTitle').innerText = 'Uploading...';
+    document.getElementById('progressText').style.display = 'block';
+    document.querySelector('#progressBar div').style.width = '0%';
+    document.getElementById('modalData').innerHTML = '';
+    document.getElementById('continueBtn').style.display = 'none';
+
+    // AJAX call to Django view
+    var xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', function(e) {
+        if(e.lengthComputable) {
+            var percent = Math.round((e.loaded / e.total) * 100);
+            document.querySelector('#progressBar div').style.width = percent + '%';
+            document.getElementById('progressText').innerText = percent + '%';
+        }
+    });
+
+    xhr.onreadystatechange = function() {
+        if(xhr.readyState === 4) {
+            if(xhr.status === 200) {
+                var response = JSON.parse(xhr.responseText);
+                if(response.status === 'success') {
+                    document.getElementById('modalTitle').innerText = 'Upload Complete!';
+                    document.getElementById('progressText').style.display = 'none';
+                    document.getElementById('progressBar').style.display = 'none';
+                    document.getElementById('modalData').innerHTML = '<pre>Upload finished successfully.</pre>';
+                    document.getElementById('continueBtn').style.display = 'block';
+                } else {
+                    alert(response.message);
+                    modal.style.display = 'none';
+                }
+            } else {
+                alert('Upload failed!');
+                modal.style.display = 'none';
+            }
+        }
+    };
+
+    xhr.open('POST', '/upload-file-from-nas/', true);
+    xhr.setRequestHeader('X-CSRFToken', '{{ csrf_token }}');
+    xhr.send();  // no file input needed
+};
+
+// Continue button closes modal
+document.getElementById('continueBtn').onclick = function() {
+    document.getElementById('uploadModal').style.display = 'none';
+};
+```
+
+---
+
+## **Django View (file picked from NAS)**
+
+```python
+from django.http import JsonResponse
+import os
+
+def upload_file_from_nas(request):
+    try:
+        # Example: pick file from NAS path
+        nas_path = r"\\NAS\folder\myfile.csv"  # Replace with actual path
+        if os.path.exists(nas_path):
+            # Read or process file here
+            # Example: read first 5 lines
+            data = []
+            with open(nas_path, 'r') as f:
+                for i, line in enumerate(f):
+                    data.append(line.strip())
+                    if i >= 4:
+                        break
+            return JsonResponse({'status':'success', 'data':data})
+        else:
+            return JsonResponse({'status':'error','message':'File not found on NAS'})
+    except Exception as e:
+        return JsonResponse({'status':'error','message': str(e)})
+```
+
+---
+
+### ✅ Flow:
+
+1. User clicks **Upload from NAS**.
+2. Modal shows **progress bar**.
+3. AJAX calls Django view which picks the file from NAS.
+4. Upload completes → modal shows success message + **Continue** button.
+5. User clicks **Continue** → modal closes → main page UI remains as-is.
+
+---
+
+If you want, I can **enhance this to show a table of data inside the popup** instead of just a success message, so the user can preview it before clicking Continue.
+
+Do you want me to do that?
