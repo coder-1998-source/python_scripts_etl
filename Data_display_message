@@ -1,0 +1,99 @@
+Got it 👍 — here are some clean and user-friendly message examples for all three cases — **success**, **no data**, and **failed** upload — that you can use in your Django or JavaScript UI.
+
+---
+
+### ✅ **1. Data Uploaded Successfully**
+
+Use when your upload and processing finish without issues:
+
+```text
+✅ Data uploaded successfully!
+```
+
+or
+
+```text
+🎉 Upload complete — your data has been saved successfully.
+```
+
+or
+
+```text
+✔️ Your file was uploaded and processed successfully.
+```
+
+---
+
+### ⚠️ **2. No Data to Upload**
+
+Use when the system detects that there’s no new or valid data:
+
+```text
+⚠️ No data available to upload.
+```
+
+or
+
+```text
+ℹ️ Nothing to upload — no new records found.
+```
+
+---
+
+### ❌ **3. Data Upload Failed**
+
+Use when an exception or validation error occurs:
+
+```text
+❌ Upload failed — please try again.
+```
+
+or
+
+```text
+🚫 Something went wrong while uploading your data.
+```
+
+or
+
+```text
+⚠️ Upload failed due to an unexpected error. Please check your file and try again.
+```
+
+---
+
+### 💡 **Tip for Django (example)**
+
+In your view:
+
+```python
+if success:
+    message = "✅ Data uploaded successfully!"
+elif no_data:
+    message = "⚠️ No data available to upload."
+else:
+    message = "❌ Upload failed — please try again."
+return render(request, 'yourpage.html', {'message': message})
+```
+
+In your HTML:
+
+```html
+{% if message %}
+<div class="upload-message">{{ message }}</div>
+{% endif %}
+```
+
+And you can style it with CSS:
+
+```css
+.upload-message {
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 10px;
+}
+```
+
+---
+
+Would you like me to give you styled versions (green for success, orange for no data, red for failed) that show as popup or alert messages in your page?
