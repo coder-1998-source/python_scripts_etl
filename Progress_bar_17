@@ -1,0 +1,131 @@
+Got it 👍 — you want to show a **progress indicator (“please wait…” or a progress bar)** between the moment a user clicks **Upload Data** and before the **modal popup** appears once the upload is complete.
+
+Can you confirm which **frontend technology** you are using? (I’ll tailor the example accordingly.)
+
+* 🧩 **PySimpleGUI**
+* 💻 **HTML + JavaScript (Django web page)**
+* 🖼️ Something else (React, Tkinter, etc.)
+
+---
+
+Since most of your recent work is with **Django web pages**, here’s a complete example for that case 👇
+
+---
+
+### ✅ Example: Show “Please wait” or progress bar before modal popup (HTML + JS + Django)
+
+#### **HTML**
+
+```html
+<button id="uploadBtn">Upload Data</button>
+
+<!-- Please Wait / Loading message -->
+<div id="loadingMessage" style="display:none;">
+  <div class="overlay"></div>
+  <div class="loading-box">
+    <p>⏳ Please wait, data is being uploaded...</p>
+    <progress id="progressBar" value="0" max="100"></progress>
+  </div>
+</div>
+
+<!-- Modal Popup -->
+<div id="resultModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <p id="resultMessage"></p>
+    <button onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<style>
+.overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+}
+.loading-box {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: white; padding: 20px; border-radius: 10px;
+  text-align: center;
+}
+.modal {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+}
+.modal-content {
+  background: white; padding: 20px; border-radius: 10px;
+  width: 300px; margin: 20% auto; text-align: center;
+}
+</style>
+```
+
+---
+
+#### **JavaScript**
+
+```javascript
+document.getElementById("uploadBtn").addEventListener("click", function() {
+    // Show "Please Wait"
+    document.getElementById("loadingMessage").style.display = "block";
+
+    // Simulate upload progress (optional visual effect)
+    let progress = 0;
+    const bar = document.getElementById("progressBar");
+    const timer = setInterval(() => {
+        progress += 10;
+        bar.value = progress;
+        if (progress >= 90) clearInterval(timer);
+    }, 300);
+
+    // Send AJAX request to upload
+    fetch("/upload_data/", { method: "POST" })
+      .then(response => response.json())
+      .then(data => {
+          clearInterval(timer);
+          bar.value = 100;
+          document.getElementById("loadingMessage").style.display = "none";
+
+          // Show popup modal
+          document.getElementById("resultMessage").textContent = data.message;
+          document.getElementById("resultModal").style.display = "block";
+      })
+      .catch(error => {
+          document.getElementById("loadingMessage").style.display = "none";
+          alert("Upload failed: " + error);
+      });
+});
+
+function closeModal() {
+  document.getElementById("resultModal").style.display = "none";
+}
+```
+
+---
+
+#### **views.py (Django example)**
+
+```python
+from django.http import JsonResponse
+from time import sleep
+
+def upload_data(request):
+    if request.method == 'POST':
+        # Simulate data upload / processing
+        sleep(3)
+        return JsonResponse({'message': 'Data uploaded successfully!'})
+```
+
+---
+
+### 🧠 How It Works
+
+1. User clicks “Upload Data” → **“Please wait” message appears**.
+2. The script sends an **AJAX POST** request to `/upload_data/`.
+3. Once the backend finishes processing → the **modal popup appears**.
+4. User closes the modal and continues.
+
+---
+
+Would you like me to modify this so that:
+
+* It shows an **animated progress bar** tied to actual upload progress (using `XMLHttpRequest`)?
+  or
+* You just want a **simple “please wait” overlay** with a spinner (no progress tracking)?
