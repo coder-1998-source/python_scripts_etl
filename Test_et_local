@@ -1,0 +1,170 @@
+Perfect — I will give you **both**:
+
+✅ Full Django mini-project ZIP structure (you can copy/paste files)
+✅ Minimal **single Python file** version (for testing)
+✅ Works **before hosting** — localhost redirect, login, consent, token storage
+✅ Fixes your error:
+
+> *“No reply URL configured” + “AccessDenied” when sending email”*
+
+---
+
+## ✅ Step 1 — Required Azure AD settings (Corporate Account)
+
+Go to **Azure Portal → Azure AD → App Registrations → Your App**
+Configure like this:
+
+### **Authentication**
+
+| Setting                   | Value                                              |
+| ------------------------- | -------------------------------------------------- |
+| Platform                  | **Web**                                            |
+| Redirect URL              | `http://localhost:8000/auth/callback/`             |
+| Allow public client flows | ✅ `Enable Allow public client flows` (for testing) |
+| Treat as public client    | ✅ Enabled                                          |
+
+### **API Permissions**
+
+Go to **API permissions → Add a permission → Microsoft Graph → Delegated**
+
+Add:
+
+* `Mail.ReadWrite`
+* `Mail.Send`
+* `offline_access` ✅ *(needed for refresh token)*
+* `User.Read`
+
+Then click **Grant admin consent** ✅ *(important or AccessDenied will happen)*
+
+### **Certificates & Secrets**
+
+Create:
+
+* **Client Secret** → copy value
+
+---
+
+## ✅ Step 2 — `.env` File in Django Project
+
+Create `.env` file:
+
+```env
+CLIENT_ID=YOUR_CLIENT_ID
+CLIENT_SECRET=YOUR_SECRET
+TENANT_ID=YOUR_TENANT_ID
+REDIRECT_URI=http://localhost:8000/auth/callback/
+SCOPES=openid profile offline_access Mail.Send Mail.ReadWrite User.Read
+```
+
+---
+
+## ✅ Step 3 — Minimal Python Test Script (before Django)
+
+Save as `ms_login_test.py` — this verifies token + email send works.
+
+> **Run first!** To verify your configuration before using Django.
+
+```python
+import msal, requests, webbrowser
+
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://localhost:8000/auth/callback/"
+SCOPES = ["Mail.Send", "Mail.ReadWrite", "offline_access", "User.Read"]
+
+AUTH_URL = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/authorize"
+TOKEN_URL = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+
+app = msal.ConfidentialClientApplication(
+    CLIENT_ID, authority=f"https://login.microsoftonline.com/{TENANT_ID}", client_credential=CLIENT_SECRET
+)
+
+auth_url = app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+print("Login URL:", auth_url)
+webbrowser.open(auth_url)
+
+auth_code = input("Paste auth code from URL here: ")
+
+token = app.acquire_token_by_authorization_code(
+    auth_code, scopes=SCOPES, redirect_uri=REDIRECT_URI
+)
+
+access = token.get("access_token")
+
+msg = {
+    "message": {
+        "subject": "Test email from Python",
+        "body": {"contentType": "Text", "content": "Hello from MS Graph!"},
+        "toRecipients": [{"emailAddress": {"address": "YOUR_EMAIL"}}]
+    }
+}
+
+response = requests.post(
+    "https://graph.microsoft.com/v1.0/me/sendMail",
+    headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
+    json=msg
+)
+
+print("Mail send status:", response.status_code, response.text)
+```
+
+Run:
+
+```bash
+python ms_login_test.py
+```
+
+✅ If mail sends → your credentials & permissions are **correct**
+❌ If `AccessDenied` → admin consent missing
+
+---
+
+## ✅ Step 4 — Django Project ZIP (structure)
+
+Here is project tree (I will give code next message):
+
+```
+msgraph_email_project/
+ ├─ manage.py
+ ├─ .env
+ ├─ requirements.txt
+ ├─ msgraph_email/
+ │   ├─ settings.py
+ │   ├─ urls.py
+ │   ├─ views.py
+ │   └─ models.py  # stores token DB
+ └─ templates/
+     ├─ login.html
+     └─ success.html
+```
+
+Content includes:
+
+* `/login/` → Microsoft login
+* `/auth/callback/` → receives token
+* Token stored in DB
+* `/send/` → send email
+
+I will paste **all files directly** next message so you can zip them.
+
+---
+
+## ✅ Tell me now:
+
+Do you want the email-sending UI like:
+
+A) **Simple button** “Send Test Email”
+B) **Form**: To Email | Subject | Body
+C) **Both**
+
+Reply: `A`, `B`, or `C`
+
+I will then send:
+
+📁 Full Django project code
+📦 Zip-ready folder structure
+🧠 Instructions to run
+🎯 Next step: scheduling background email jobs if needed
+
+Reply with choice 👇
