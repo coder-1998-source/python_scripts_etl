@@ -1,0 +1,177 @@
+Great — since you're using **Python + Django**, you need to configure your Azure App to allow **local OAuth redirect**.
+
+Right now your app tries to sign in, but Azure doesn’t know where to send the token back → hence:
+
+> ❌ No reply address is registered for the application
+
+Let's fix it.
+
+---
+
+## ✅ Step-by-Step: Configure Azure App for Django (Local Dev)
+
+### **1️⃣ Go to Azure Portal**
+
+👉 [https://portal.azure.com](https://portal.azure.com)
+
+Then:
+
+**Azure Active Directory → App registrations → Your App → Authentication**
+
+---
+
+### **2️⃣ Add Redirect URIs for Django Localhost**
+
+Click **Add a platform → Web**
+
+Add these:
+
+```
+http://localhost:8000/auth/callback
+http://127.0.0.1:8000/auth/callback
+```
+
+> *This URL must match your Django route that handles Microsoft login callback.*
+
+---
+
+### **3️⃣ Enable Public Client (Needed for local interactive login too)**
+
+Scroll down in Authentication page → enable:
+
+✅ **Allow public client flows**
+
+---
+
+### **4️⃣ Add API Permissions**
+
+Go to **API permissions**
+
+Add **Delegated** permissions:
+
+| Permission      | Purpose       |
+| --------------- | ------------- |
+| User.Read       | login         |
+| Mail.Send       | send mail     |
+| offline_access  | refresh token |
+| openid, profile | user identity |
+
+Then click:
+
+✔ **Grant consent** *(if personal account no admin needed—otherwise IT admin must do)*
+
+---
+
+## ✅ Django Code Structure
+
+### **urls.py**
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("auth/login", views.ms_login, name="ms_login"),
+    path("auth/callback", views.ms_callback, name="ms_callback"),
+    path("send-mail", views.send_mail, name="send_mail"),
+]
+```
+
+---
+
+### **views.py**
+
+```python
+import msal, requests
+from django.shortcuts import redirect, HttpResponse
+
+CLIENT_ID = "YOUR_APP_CLIENT_ID"
+CLIENT_SECRET = "YOUR_APP_SECRET"
+TENANT_ID = "common"  # use 'common' for personal accounts
+REDIRECT_URI = "http://localhost:8000/auth/callback"
+SCOPES = ["User.Read", "Mail.Send", "offline_access"]
+
+def get_msal_app():
+    return msal.ConfidentialClientApplication(
+        CLIENT_ID, client_credential=CLIENT_SECRET,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}"
+    )
+
+def ms_login(request):
+    auth_url = get_msal_app().get_authorization_request_url(
+        SCOPES, redirect_uri=REDIRECT_URI
+    )
+    return redirect(auth_url)
+
+def ms_callback(request):
+    code = request.GET.get("code")
+    result = get_msal_app().acquire_token_by_authorization_code(
+        code, scopes=SCOPES, redirect_uri=REDIRECT_URI
+    )
+    request.session["token"] = result["access_token"]
+    return HttpResponse("Login successful. <a href='/send-mail'>Send test email</a>")
+
+def send_mail(request):
+    token = request.session.get("token")
+    payload = {
+        "message": {
+            "subject": "Test Email",
+            "body": {"contentType": "Text", "content": "Hello from Django & Graph API!"},
+            "toRecipients": [{"emailAddress": {"address": "yourmail@outlook.com"}}]
+        }
+    }
+    r = requests.post(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload
+    )
+    return HttpResponse(f"{r.status_code} — {r.text}")
+```
+
+---
+
+## ✅ Test Flow
+
+1. Run Django:
+
+   ```bash
+   python manage.py runserver
+   ```
+
+2. Visit:
+
+   ```
+   http://localhost:8000/auth/login
+   ```
+
+3. Sign in → returns to `/auth/callback`
+
+4. Click **Send test email**
+
+---
+
+## 🧠 Common Mistakes to Avoid
+
+| Issue                         | Fix                               |
+| ----------------------------- | --------------------------------- |
+| Using wrong redirect URI      | Must match Django URL in Azure    |
+| Not adding offline_access     | Can't refresh token               |
+| Tenant = wrong                | Use `common` for personal Outlook |
+| Trying `/users/{id}/sendMail` | Use `/me/sendMail` for delegated  |
+
+---
+
+## 🎯 You're now set for local dev without hosting ✅
+
+Once you deploy, you only update the redirect URI to the live domain — not the code.
+
+---
+
+Would you like me to also send:
+
+✅ Refresh token saving code
+✅ UI flow for login button
+✅ Full project zip template
+✅ Code to create email draft instead of sending
+
+Tell me — I'll provide it.
