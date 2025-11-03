@@ -1,0 +1,97 @@
+Ah, this specific message tells us exactly the issue:
+
+> **"No reply address is registered for the application"**
+
+This happens when you use **Interactive login / device login / auth code flow**, but your Azure AD app has **no Redirect URI configured**.
+
+Since you're running your code locally (not hosted yet), you must add a **Redirect URI**.
+
+---
+
+### ✅ **Fix: Add Redirect URI in Azure App Registration**
+
+1. Go to **Azure Portal → App registrations**
+2. Select your app
+3. Go to **Authentication**
+4. Under **Redirect URIs**, click **Add a platform**
+5. Choose:
+
+   ✅ **Mobile & Desktop applications** *(for device/MSAL desktop flow)*
+   OR
+   ✅ **Web** *(if using auth code flow)*
+
+---
+
+### 📍 **For local development, add these Redirect URIs**
+
+#### **MSAL Desktop / Device Code Flow**
+
+Add this URI:
+
+```
+https://login.microsoftonline.com/common/oauth2/nativeclient
+```
+
+If using `acquire_token_interactive()`, also add:
+
+```
+http://localhost
+```
+
+and/or
+
+```
+http://localhost:8000
+```
+
+*(depending on your local app port)*
+
+---
+
+### ⚙️ **Example MSAL setup that requires this**
+
+```python
+result = app.acquire_token_interactive(scopes=["Mail.Send"])
+```
+
+This interactive flow **must have Redirect URI registered**.
+
+---
+
+### 🧠 Why This Error Occurs
+
+When MSAL tries to open the browser login, Microsoft needs a callback URL to return the auth code.
+Since you registered the app without a redirect URL → Microsoft doesn't know where to send the token → **error**.
+
+---
+
+### ✅ After you add the redirect URI, retry login.
+
+---
+
+### 🌟 **Important note for your case**
+
+Since you're **not an Azure admin** and probably developing/testing:
+
+* Use **Delegated permissions**
+* Redirect URI only for **interactive authentication**
+* You DON'T need a hosted website yet
+
+---
+
+### Should I give you a step-by-step screenshot guide?
+
+Tell me your app type so I tailor instructions:
+📌 Python
+📌 Django
+📌 Node.js
+📌 React
+📌 .NET
+📌 Other
+
+And also confirm: are you using
+
+1. ✅ **Personal Outlook account**
+2. 🏢 **Office/Company account**
+
+Your next step depends on this.
