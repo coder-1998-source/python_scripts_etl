@@ -1,0 +1,202 @@
+Perfect 👍 — since your authentication flow is already working locally, you’re just one step away from a **fully automatic Microsoft Graph login + email send flow inside Django**.
+
+Here’s everything you need — both **minimal single-file version** and explanation on how to expand it later.
+
+---
+
+## ⚙️ Minimal Django Example: Microsoft Graph Login + Token Fetch
+
+This will automatically:
+
+1. Redirect user to Microsoft login page
+2. Handle redirect callback (`/callback/`)
+3. Exchange authorization code for access token
+4. Display token result (and can later be used to send email)
+
+---
+
+### 🧱 Folder structure
+
+```
+msauth_demo/
+├── manage.py
+├── msauth_demo/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+└── authapp/
+    ├── __init__.py
+    ├── views.py
+    └── urls.py
+```
+
+---
+
+### 1️⃣ `settings.py`
+
+Add required entries:
+
+```python
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "authapp",
+]
+
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+DEBUG = True
+
+SECRET_KEY = "replace_me"
+
+ROOT_URLCONF = "msauth_demo.urls"
+
+# MSAL settings
+GRAPH_CLIENT_ID = "YOUR_CLIENT_ID"
+GRAPH_CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+GRAPH_TENANT_ID = "YOUR_TENANT_ID"
+GRAPH_REDIRECT_URI = "http://localhost:8000/callback/"
+GRAPH_SCOPES = ["Mail.Send", "User.Read"]
+```
+
+---
+
+### 2️⃣ `authapp/views.py`
+
+```python
+from django.shortcuts import redirect, render
+from django.http import HttpResponse
+import msal, requests
+
+from django.conf import settings
+
+def signin(request):
+    app = msal.ConfidentialClientApplication(
+        settings.GRAPH_CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{settings.GRAPH_TENANT_ID}",
+        client_credential=settings.GRAPH_CLIENT_SECRET,
+    )
+    auth_url = app.get_authorization_request_url(
+        settings.GRAPH_SCOPES,
+        redirect_uri=settings.GRAPH_REDIRECT_URI,
+    )
+    return redirect(auth_url)
+
+
+def callback(request):
+    code = request.GET.get("code", None)
+    if not code:
+        return HttpResponse("❌ No authorization code received.")
+
+    app = msal.ConfidentialClientApplication(
+        settings.GRAPH_CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{settings.GRAPH_TENANT_ID}",
+        client_credential=settings.GRAPH_CLIENT_SECRET,
+    )
+
+    token = app.acquire_token_by_authorization_code(
+        code,
+        scopes=settings.GRAPH_SCOPES,
+        redirect_uri=settings.GRAPH_REDIRECT_URI,
+    )
+
+    if "access_token" not in token:
+        return HttpResponse(f"❌ Token Error: {token}")
+
+    # Save token in session
+    request.session["access_token"] = token["access_token"]
+    return HttpResponse("✅ Authentication successful! Token acquired.")
+
+
+def send_email(request):
+    token = request.session.get("access_token")
+    if not token:
+        return redirect("/signin/")
+
+    email_payload = {
+        "message": {
+            "subject": "Graph API Django Test",
+            "body": {"contentType": "Text", "content": "This email was sent using Django + Graph API"},
+            "toRecipients": [{"emailAddress": {"address": "YOUR_EMAIL@COMPANY.COM"}}],
+        }
+    }
+
+    proxies = {
+        "http": "http://proxy.company.com:8080",   # if required
+        "https": "http://proxy.company.com:8080"
+    }
+
+    response = requests.post(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        json=email_payload,
+        proxies=proxies   # remove if not needed
+    )
+
+    return HttpResponse(f"📨 Mail send status: {response.status_code} — {response.text}")
+```
+
+---
+
+### 3️⃣ `authapp/urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("signin/", views.signin, name="signin"),
+    path("callback/", views.callback, name="callback"),
+    path("sendmail/", views.send_email, name="send_email"),
+]
+```
+
+---
+
+### 4️⃣ `msauth_demo/urls.py`
+
+```python
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('authapp.urls')),
+]
+```
+
+---
+
+### 5️⃣ Run it
+
+```bash
+python manage.py runserver
+```
+
+Then open your browser and visit:
+
+* 🔹 **[http://localhost:8000/signin/](http://localhost:8000/signin/)** → login with your Microsoft account
+* 🔹 Redirects to `/callback/` → automatically acquires token
+* 🔹 Then go to `/sendmail/` → sends test email using Graph API
+
+---
+
+### 🧠 Notes
+
+✅ Works for **single-tenant** apps — uses your `tenant_id`
+✅ You no longer need to manually paste any code
+✅ Can expand easily to include draft creation, attachments, etc.
+✅ Tokens can be stored in DB (table like `OutlookToken`) for later re-use
+✅ Add proxy lines if you’re on a corporate network
+
+---
+
+Would you like me to prepare this same code as a **ready-to-run zip project** (with `manage.py`, folder structure, and placeholders filled)?
+You can unzip and run immediately with your credentials.
