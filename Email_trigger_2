@@ -1,0 +1,168 @@
+Ah! Now I understand clearly — you want the **authorization code flow (delegated user)**, but you don’t want to **manually copy-paste the `code`**. You want the **user to go to a URL**, sign in, and then automatically send the email when the redirect hits your Django app.
+
+Here’s a **clean example using Django**.
+
+---
+
+## ✅ Flow Overview
+
+1. User visits `/send_mail/` → redirected to Microsoft login automatically.
+2. After login, Microsoft redirects to `/auth/callback/` with `code`.
+3. Django view `/auth/callback/` **automatically exchanges code for token**.
+4. Email is sent automatically with that token.
+
+No manual copy-paste required.
+
+---
+
+### `views.py`
+
+```python
+import msal
+import requests
+from django.http import JsonResponse, HttpResponseRedirect
+from django.conf import settings
+
+# --- Azure App Registration details ---
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://127.0.0.1:8000/auth/callback"
+SCOPES = ["Mail.Send", "User.Read"]  # Delegated scopes
+
+# Optional in-memory token cache
+TOKEN_CACHE = {}
+
+
+def send_mail(request):
+    """
+    Step 1: User visits this URL → redirect to Microsoft login
+    """
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    auth_url = app.get_authorization_request_url(
+        SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    return HttpResponseRedirect(auth_url)
+
+
+def auth_callback(request):
+    """
+    Step 2: Microsoft redirects here with code → automatically send email
+    """
+    code = request.GET.get("code")
+    if not code:
+        return JsonResponse({"error": "No authorization code received"}, status=400)
+
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    # Exchange code for token
+    token = app.acquire_token_by_authorization_code(
+        code,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+
+    if "access_token" not in token:
+        return JsonResponse({"error": "Token acquisition failed", "details": token}, status=400)
+
+    access_token = token["access_token"]
+    TOKEN_CACHE["access_token"] = access_token
+
+    # Send email automatically
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    email_data = {
+        "message": {
+            "subject": "✅ Auto email after MS login",
+            "body": {
+                "contentType": "Text",
+                "content": "This email was automatically sent after user signed in."
+            },
+            "toRecipients": [
+                {"emailAddress": {"address": "recipient@example.com"}}
+            ]
+        },
+        "saveToSentItems": "true"
+    }
+
+    response = requests.post(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        headers=headers,
+        json=email_data
+    )
+
+    if response.status_code == 202:
+        return JsonResponse({"status": "✅ Email sent successfully!"})
+    else:
+        return JsonResponse({"status": "❌ Failed to send email", "details": response.json()}, status=400)
+```
+
+---
+
+### `urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("send_mail/", views.send_mail, name="send_mail"),
+    path("auth/callback", views.auth_callback, name="auth_callback"),
+]
+```
+
+---
+
+### ✅ How it works
+
+1. User opens:
+
+```
+http://127.0.0.1:8000/send_mail/
+```
+
+2. Redirects to Microsoft login automatically.
+3. After login → Microsoft redirects to:
+
+```
+http://127.0.0.1:8000/auth/callback?code=XXXXX
+```
+
+4. Django automatically:
+
+   * Exchanges `code` for access token
+   * Sends the email using Graph API
+   * Returns JSON response
+
+No manual code pasting required.
+
+---
+
+### ⚙️ Azure App Registration Notes
+
+* **Supported account type:** Single tenant (or multi-tenant as needed)
+* **Redirect URI:** `http://127.0.0.1:8000/auth/callback`
+* **API permissions (Delegated):**
+
+  * Mail.Send
+  * User.Read
+* Click **Grant admin consent** for your tenant.
+
+---
+
+If you want, I can provide a **fully self-contained Django zip project** with this logic, ready to run locally, so you can just unzip and test the automatic email send flow.
+
+Do you want me to do that?
