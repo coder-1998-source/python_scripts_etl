@@ -1,0 +1,145 @@
+Perfect 👍 — you want it **as simple as possible**:
+➡️ Visiting a specific Django URL (like `/send_mail/`) should **automatically send an email** via Microsoft Graph API **without manual code input** or redirecting the user to Microsoft each time (if a valid token exists).
+
+Below is a **minimal working example** for your local environment 👇
+
+---
+
+## ✅ **Complete Django Logic (Single URL Email Send)**
+
+### `views.py`
+
+```python
+import msal
+import requests
+from django.http import JsonResponse
+from django.conf import settings
+import time
+
+# Microsoft App details (replace with your actual values)
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://127.0.0.1:8000/send_mail"
+SCOPES = ["https://graph.microsoft.com/.default"]
+
+# Simple in-memory token cache
+TOKEN_CACHE = {"token": None, "expires_at": 0}
+
+
+def get_access_token():
+    """Fetches or reuses access token"""
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    # Reuse valid token
+    if TOKEN_CACHE["token"] and TOKEN_CACHE["expires_at"] > time.time():
+        return TOKEN_CACHE["token"]
+
+    result = app.acquire_token_silent(SCOPES, account=None)
+    if not result:
+        result = app.acquire_token_for_client(scopes=SCOPES)
+
+    if "access_token" in result:
+        TOKEN_CACHE["token"] = result["access_token"]
+        TOKEN_CACHE["expires_at"] = time.time() + int(result.get("expires_in", 3600))
+        return result["access_token"]
+    else:
+        raise Exception(f"Failed to get token: {result}")
+
+
+def send_mail(request):
+    """Single URL: Automatically send email when visited"""
+    try:
+        access_token = get_access_token()
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+
+        email_data = {
+            "message": {
+                "subject": "✅ Test email from Django using Graph API",
+                "body": {
+                    "contentType": "Text",
+                    "content": "This is a test email sent directly by visiting /send_mail URL."
+                },
+                "toRecipients": [
+                    {"emailAddress": {"address": "recipient@example.com"}}
+                ]
+            },
+            "saveToSentItems": "true"
+        }
+
+        response = requests.post(
+            "https://graph.microsoft.com/v1.0/users/YOUR_EMAIL_ADDRESS/sendMail",
+            headers=headers,
+            json=email_data
+        )
+
+        if response.status_code == 202:
+            return JsonResponse({"status": "✅ Email sent successfully!"})
+        else:
+            return JsonResponse({
+                "status": "❌ Failed to send email",
+                "details": response.json()
+            }, status=400)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+```
+
+---
+
+### `urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("send_mail/", views.send_mail, name="send_mail"),
+]
+```
+
+---
+
+### ✅ **How it works**
+
+* When you open this URL in your browser:
+
+  ```
+  http://127.0.0.1:8000/send_mail/
+  ```
+
+  Django:
+
+  1. Automatically gets an access token using **client credentials flow**.
+  2. Sends an email via Microsoft Graph API.
+  3. Returns JSON with `"✅ Email sent successfully!"`.
+
+---
+
+### ⚙️ **Azure AD Setup**
+
+In **Azure Portal → App Registrations → Your App**:
+
+* **Supported account type**: Single tenant
+* **API permissions** → Add → Microsoft Graph → Application permissions → `Mail.Send`
+* Click **Grant admin consent**
+* No redirect URI required (since no user sign-in).
+
+---
+
+### 🧠 Notes
+
+* This uses **client credentials flow** — good for service accounts or background email senders.
+* If you want **per-user emails (from their mailbox)**, you’ll need the **authorization code flow** instead.
+
+---
+
+Would you like me to give you the **version that sends the email on behalf of the signed-in user** (using their Microsoft account instead of app credentials)?
