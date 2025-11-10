@@ -1,0 +1,136 @@
+Got it 👍 — no Azure Data Factory — no problem at all.
+
+That means the **simplest and most reliable** option for you is to use **AzCopy** (Microsoft’s command-line sync tool) on your **existing on-prem Windows machine** that already has access to the NAS.
+
+This way, you don’t need any new Azure services — just a **storage account** and **one small sync script**.
+
+Let’s walk through this in a clean, ready-to-run setup 👇
+
+---
+
+## 💡 Goal
+
+Automatically copy or sync all files from your **NAS path**
+(e.g., `\\NAS_SERVER\share\weeklyfiles`)
+to your **Azure Blob container** on a **weekly schedule**,
+so that your **cloud app** can read them directly from Blob.
+
+---
+
+## 🔹 Step 1: Install AzCopy on the On-Prem Server
+
+1. Download the latest version:
+   👉 [https://aka.ms/downloadazcopy-v10-windows](https://aka.ms/downloadazcopy-v10-windows)
+
+2. Extract the zip, and copy `azcopy.exe` to a folder like:
+
+   ```
+   C:\Tools\AzCopy\
+   ```
+
+3. Add it to your system PATH (optional but convenient).
+
+---
+
+## 🔹 Step 2: Generate a SAS Token for Blob Storage
+
+1. Go to **Azure Portal → Storage Account → Containers**
+2. Select your container (e.g., `datafiles`)
+3. Click **Generate SAS**
+4. Select permissions you need:
+
+   * ✅ Read
+   * ✅ Write
+   * ✅ Create
+   * ✅ Delete
+   * ✅ List
+5. Copy the **container SAS URL** — it will look like:
+
+   ```
+   https://mystorage.blob.core.windows.net/datafiles?sv=2025-02-01&ss=b&srt=sco&sp=rwcl&se=2025-12-31T00:00Z&st=2025-11-01T00:00Z&spr=https&sig=XXXXXX
+   ```
+
+---
+
+## 🔹 Step 3: Create Sync Script
+
+Create a `.bat` or `.cmd` file (for example: `sync_nas_to_blob.bat`):
+
+```bat
+@echo off
+REM === Azure Blob Sync Script ===
+SETLOCAL
+
+REM Path to NAS folder
+SET NAS_PATH=\\NAS_SERVER\share\weeklyfiles
+
+REM Destination container SAS URL
+SET AZURE_CONTAINER=https://mystorage.blob.core.windows.net/datafiles?<SAS_TOKEN>
+
+REM Path to AzCopy
+SET AZCOPY_PATH=C:\Tools\AzCopy\azcopy.exe
+
+echo Sync started at %date% %time%
+"%AZCOPY_PATH%" sync "%NAS_PATH%" "%AZURE_CONTAINER%" --recursive
+echo Sync completed at %date% %time%
+
+ENDLOCAL
+```
+
+---
+
+## 🔹 Step 4: Schedule It Weekly (Windows Task Scheduler)
+
+1. Open **Task Scheduler → Create Task**
+2. **Trigger:** Weekly (e.g., every Sunday 2 AM)
+3. **Action:** Start a program → Browse → select your `.bat` file
+4. Check “Run whether user is logged on or not”
+5. Save → Enter admin credentials when prompted.
+
+✅ Every week, files from the NAS will automatically sync to your Azure Blob container.
+
+---
+
+## 🔹 Step 5: Read in the Cloud App
+
+Now your cloud app or Azure service can read from Blob directly:
+
+```python
+from azure.storage.blob import BlobServiceClient
+import pandas as pd
+from io import StringIO
+
+connection_string = "DefaultEndpointsProtocol=https;AccountName=mystorage;AccountKey=yourkey;EndpointSuffix=core.windows.net"
+container_name = "datafiles"
+blob_name = "weekly_report.csv"
+
+blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+
+data = blob_client.download_blob().readall()
+df = pd.read_csv(StringIO(data.decode('utf-8')))
+print(df.head())
+```
+
+---
+
+## 🔒 Security Tips
+
+* Store the SAS token securely (never commit to source code).
+* Optionally, use **Azure Key Vault** to store credentials.
+* Rotate SAS tokens periodically (set expiry ~90 days or less).
+
+---
+
+## ✅ Summary
+
+| Task                  | Tool                          | Frequency          |
+| --------------------- | ----------------------------- | ------------------ |
+| Copy NAS → Azure Blob | AzCopy                        | Weekly (scheduled) |
+| Automation            | Windows Task Scheduler        | No need for ADF    |
+| Read data             | Azure Blob SDK / pandas       | Cloud-native       |
+| Security              | SAS token or Managed Identity | Recommended        |
+
+---
+
+Would you like me to show you an **enhanced version of the AzCopy script** that keeps logs (like timestamps, success/fail, file count) for auditing each weekly sync?
