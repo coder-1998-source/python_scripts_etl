@@ -1,0 +1,170 @@
+Perfect! Here’s a **minimal working Django + JS example** that implements the full flow with a popup:
+
+* Main page button → opens popup → Microsoft login → email sent → JSON sent back to main page JS.
+
+---
+
+## 1️⃣ `urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("", views.home, name="home"),
+    path("send_mail/", views.send_mail, name="send_mail"),
+    path("auth/callback/", views.auth_callback, name="auth_callback"),
+]
+```
+
+---
+
+## 2️⃣ `views.py`
+
+```python
+import msal
+import requests
+from django.shortcuts import render
+from django.http import HttpResponse
+import json
+
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://127.0.0.1:8000/auth/callback/"
+SCOPES = ["Mail.Send", "User.Read"]
+
+# Home page
+def home(request):
+    return render(request, "home.html")
+
+# Step 1: Open popup -> Microsoft login
+def send_mail(request):
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+    auth_url = app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+    return HttpResponse(f'<script>window.location="{auth_url}";</script>')
+
+# Step 2: Callback -> send email -> send result to main page via postMessage
+def auth_callback(request):
+    code = request.GET.get("code")
+    if not code:
+        result = {"status": "error", "msg": "No authorization code received"}
+        return post_message_response(result)
+
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    token_result = app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+
+    if "access_token" not in token_result:
+        result = {"status": "error", "msg": "Token acquisition failed", "details": token_result}
+        return post_message_response(result)
+
+    access_token = token_result["access_token"]
+
+    email_payload = {
+        "message": {
+            "subject": "Automatic Email from Django + MS Graph",
+            "body": {"contentType": "Text", "content": "This email was sent automatically!"},
+            "toRecipients": [{"emailAddress": {"address": "recipient@example.com"}}],
+        },
+        "saveToSentItems": "true"
+    }
+
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    r = requests.post("https://graph.microsoft.com/v1.0/me/sendMail", headers=headers, json=email_payload)
+
+    if r.status_code == 202:
+        result = {"status": "success", "msg": "Email sent successfully!"}
+    else:
+        result = {"status": "error", "msg": "Failed to send email", "details": r.text}
+
+    return post_message_response(result)
+
+
+# Helper: return HTML + JS to postMessage back to opener
+def post_message_response(result_dict):
+    json_result = json.dumps(result_dict)
+    html = f"""
+    <html>
+    <body>
+    <script>
+        const result = {json_result};
+        if (window.opener && !window.opener.closed) {{
+            window.opener.postMessage(result, "*");
+            window.close();
+        }} else {{
+            document.body.innerText = "Result: " + JSON.stringify(result);
+        }}
+    </script>
+    </body>
+    </html>
+    """
+    return HttpResponse(html)
+```
+
+---
+
+## 3️⃣ `home.html`
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Send Mail Example</title>
+</head>
+<body>
+    <h1>Django + MS Graph Send Mail</h1>
+    <button id="sendMailBtn">Send Mail</button>
+    <div id="statusBox"></div>
+
+    <script>
+    document.getElementById("sendMailBtn").addEventListener("click", () => {
+        const popup = window.open("/send_mail/", "authPopup", "width=600,height=700");
+    });
+
+    window.addEventListener("message", function(event) {
+        console.log("Received message:", event.data);
+        const statusBox = document.getElementById("statusBox");
+        if (event.data.status === "success") {
+            statusBox.textContent = "✅ " + event.data.msg;
+        } else {
+            statusBox.textContent = "❌ " + event.data.msg;
+            if(event.data.details) statusBox.textContent += " - " + event.data.details;
+        }
+    });
+    </script>
+</body>
+</html>
+```
+
+---
+
+### ✅ How it works
+
+1. User clicks **Send Mail** → opens `/send_mail/` popup.
+2. Microsoft login happens in popup → redirects to `/auth/callback/`.
+3. `auth_callback` sends the email, then uses `postMessage` to send the result back to the main page.
+4. Main page JS receives the JSON → updates the `statusBox`.
+
+---
+
+### Notes
+
+* Works **locally or in cloud** (just update `REDIRECT_URI` in Azure).
+* No manual code pasting.
+* No refresh needed on the main page.
+* Can extend to multiple recipients, dynamic subjects, etc.
+
+---
+
+If you want, I can also **adapt this to use session caching** so the user only logs in **once**, and subsequent clicks send email directly without going through login every time.
+
+Do you want me to do that?
