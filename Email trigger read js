@@ -1,0 +1,126 @@
+Ah! Got it — you want to **keep the current flow**:
+
+1. `/send_mail/` → triggers Microsoft login redirect
+2. `/auth/callback/` → handles auth code, sends mail
+
+…but still **return a JSON response to your JS**, so your frontend knows whether the email was sent successfully.
+
+Since you **cannot directly fetch JSON from `/auth/callback/`** via JS because the browser is being redirected there by Microsoft login, the clean solution is:
+
+---
+
+## ✅ Approach: Use a **popup + postMessage** reliably
+
+1. User clicks a button → JS opens `/send_mail/` in a **popup**.
+2. Django `/send_mail/` redirects popup to Microsoft login.
+3. Microsoft redirects back to `/auth/callback/` in the same popup.
+4. `/auth/callback/` sends JSON back to the **main window** using `window.opener.postMessage()`.
+
+---
+
+### 🧩 Django `/auth/callback/` (HTML + JS)
+
+```python
+import msal, requests, json
+from django.http import HttpResponse
+
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://localhost:8000/auth/callback"
+SCOPES = ["Mail.Send", "User.Read"]
+
+def auth_callback(request):
+    code = request.GET.get("code")
+    if not code:
+        result = {"status": "error", "message": "No code received"}
+    else:
+        app = msal.ConfidentialClientApplication(
+            CLIENT_ID,
+            authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+            client_credential=CLIENT_SECRET,
+        )
+        token_result = app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+        if "access_token" not in token_result:
+            result = {"status": "error", "message": "Token failed", "details": token_result}
+        else:
+            access_token = token_result["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+            email_data = {
+                "message": {
+                    "subject": "Test Email",
+                    "body": {"contentType": "Text", "content": "Email sent automatically!"},
+                    "toRecipients": [{"emailAddress": {"address": "recipient@example.com"}}],
+                },
+                "saveToSentItems": "true",
+            }
+            r = requests.post("https://graph.microsoft.com/v1.0/me/sendMail", headers=headers, json=email_data)
+            if r.status_code == 202:
+                result = {"status": "success", "message": "Email sent successfully!"}
+            else:
+                result = {"status": "error", "message": r.text}
+
+    html = f"""
+    <html><body>
+    <script>
+        if (window.opener && !window.opener.closed) {{
+            window.opener.postMessage({json.dumps(result)}, "*");
+            window.close();
+        }} else {{
+            document.body.innerText = "Could not return response. Opened outside popup.";
+            console.log({json.dumps(result)});
+        }}
+    </script>
+    </body></html>
+    """
+    return HttpResponse(html)
+```
+
+---
+
+### 🧩 JS code to open `/send_mail/` and receive JSON
+
+```js
+document.getElementById("sendMailBtn").addEventListener("click", () => {
+    const popup = window.open("/send_mail/", "authPopup", "width=600,height=700");
+    if (!popup) {
+        alert("Enable popups for this site!");
+        return;
+    }
+
+    // Listen for postMessage from popup
+    window.addEventListener("message", function handler(event) {
+        console.log("Message from popup:", event.data);
+        if (event.data.status === "success") {
+            alert(event.data.message);
+        } else {
+            alert("Failed: " + JSON.stringify(event.data));
+        }
+
+        // Remove handler to avoid duplicate triggers
+        window.removeEventListener("message", handler);
+    });
+});
+```
+
+---
+
+### ✅ Important Notes
+
+1. **Popup must open via JS** (`window.open()`), otherwise `window.opener` is `null`.
+2. Redirect URI in Azure **must exactly match** `/auth/callback`.
+3. The flow works both locally and in cloud once your domain is registered in Azure.
+4. `/send_mail/` just starts the flow; `/auth/callback/` does the heavy work and sends JSON back via `postMessage`.
+
+---
+
+If you want, I can create a **full minimal Django project** showing:
+
+* `/send_mail/`
+* `/auth/callback/`
+* JS button receiving JSON
+* Fully working end-to-end **without manual code copy-paste**
+
+This will be ready to run locally and in cloud.
+
+Do you want me to do that?
