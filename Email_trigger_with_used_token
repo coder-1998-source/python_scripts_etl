@@ -1,0 +1,200 @@
+Perfect 👏 — you’re exactly where most enterprise Django apps land:
+✅ User logs in with Microsoft (delegated access)
+✅ The same login session is used by your backend (Django) to call Microsoft Graph — in your case, to **send emails**.
+
+That’s done via the **On-Behalf-Of (OBO) flow** using `msal.ConfidentialClientApplication`.
+
+Let’s build this clearly step by step 👇
+
+---
+
+## ⚙️ **How the OBO Flow Works**
+
+Here’s the sequence:
+
+```
+User logs into your Django app → gets user access token
+↓
+Frontend sends that user token to Django backend
+↓
+Django exchanges it with Azure AD for a new token (OBO)
+↓
+Django uses this token to call Microsoft Graph (sendMail)
+↓
+Email sent as the logged-in user
+```
+
+---
+
+## 🧩 Step-by-Step Implementation
+
+### 1️⃣ Azure App Registration Settings
+
+Make sure you’ve set up your app like this:
+
+* **Platform:** Web
+* **Redirect URI:** `https://yourdomain.com/auth/callback`
+* **API Permissions:**
+
+  * `User.Read` (Delegated)
+  * `Mail.Send` (Delegated)
+* ✅ Admin consent granted
+
+No need for `Application` permissions (we’re using delegated).
+
+---
+
+### 2️⃣ User Login (Frontend)
+
+You already have Microsoft login working for authentication —
+your Django app likely gets an **access token** or **id token** from it.
+
+If your login is via MSAL.js or Django social auth, you should have the **user access token** stored in session or in the login response.
+
+For example:
+
+```python
+# After user login
+request.session["user_token"] = token["access_token"]
+```
+
+---
+
+### 3️⃣ Django Backend — `views.py`
+
+Here’s your complete **OBO flow logic** for sending email:
+
+```python
+import msal
+import requests
+from django.http import JsonResponse
+
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+
+SCOPES = ["https://graph.microsoft.com/.default"]
+
+def send_mail(request):
+    user_token = request.session.get("user_token")  # 🔹 token obtained during login
+    if not user_token:
+        return JsonResponse({"error": "User not logged in with Microsoft"}, status=401)
+
+    # Create the confidential client app
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    # Exchange user token for Graph token (On-Behalf-Of)
+    result = app.acquire_token_on_behalf_of(user_token, scopes=SCOPES)
+
+    if "access_token" not in result:
+        return JsonResponse({"error": "Failed to acquire token", "details": result}, status=400)
+
+    graph_token = result["access_token"]
+
+    # Use Microsoft Graph API to send mail as the user
+    headers = {
+        "Authorization": f"Bearer {graph_token}",
+        "Content-Type": "application/json"
+    }
+
+    email_payload = {
+        "message": {
+            "subject": "Email sent from Django using OBO flow",
+            "body": {
+                "contentType": "Text",
+                "content": "This email was sent on behalf of the logged-in user."
+            },
+            "toRecipients": [
+                {"emailAddress": {"address": "recipient@example.com"}}
+            ]
+        },
+        "saveToSentItems": "true"
+    }
+
+    response = requests.post(
+        "https://graph.microsoft.com/v1.0/me/sendMail",
+        headers=headers,
+        json=email_payload
+    )
+
+    if response.status_code == 202:
+        return JsonResponse({"status": "✅ Email sent successfully"})
+    else:
+        return JsonResponse({
+            "status": "❌ Failed to send email",
+            "details": response.json()
+        }, status=400)
+```
+
+---
+
+### 4️⃣ In Your Login Flow (MSAL.js or Django social auth)
+
+Make sure you request the correct scopes when users log in:
+
+```
+User.Read Mail.Send openid profile offline_access
+```
+
+And when the user successfully logs in, store the `access_token` in the Django session.
+
+Example (if using MSAL.js in frontend):
+
+```javascript
+const loginRequest = {
+  scopes: ["User.Read", "Mail.Send", "openid", "profile", "offline_access"]
+};
+
+msalInstance.loginPopup(loginRequest).then(response => {
+  fetch("/store_token/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: response.accessToken })
+  });
+});
+```
+
+Backend endpoint `/store_token/`:
+
+```python
+import json
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+
+@csrf_exempt
+def store_token(request):
+    data = json.loads(request.body)
+    request.session["user_token"] = data.get("token")
+    return JsonResponse({"status": "token stored"})
+```
+
+---
+
+### 5️⃣ Trigger Email
+
+Once the user is logged in, you can just call:
+
+```javascript
+fetch("/send_mail/")
+  .then(res => res.json())
+  .then(data => console.log(data));
+```
+
+✅ The email will be sent **as the logged-in user**.
+No popup, no manual code entry, and no additional login required.
+
+---
+
+## 🔐 Important Notes
+
+* Your Django app must use **HTTPS** in production (required by Azure AD).
+* Ensure **`Mail.Send` (Delegated)** permission is consented by the tenant admin.
+* The OBO flow **does not work** with ID tokens — you must pass the **Access Token** from Microsoft login.
+
+---
+
+Would you like me to show you the **exact integration example** if your Microsoft login is done using `django-allauth` or `python-social-auth` (so we can extract the right token from there)?
