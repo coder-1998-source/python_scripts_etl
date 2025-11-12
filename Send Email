@@ -1,0 +1,168 @@
+Perfect — let’s focus on **Option 3: poll backend for status**. This avoids popups and redirects entirely and allows your existing JS page to **automatically fetch the mail-sending result**.
+
+Here’s how the flow works:
+
+---
+
+## ✅ Flow Overview (Option 3)
+
+1. User clicks **Send Mail** → hits `/send_mail/`.
+2. Django **redirects user to Microsoft login** (or uses stored token if already authorized).
+3. `/auth/callback/` receives the code, exchanges for token, sends email.
+4. Instead of returning JSON to the page, the result is **stored in session or database**.
+5. JS on the main page **polls `/mail_status/`** every few seconds to check if the email was sent.
+6. Once result is available, JS updates the UI automatically.
+
+---
+
+## 1️⃣ `urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("send_mail/", views.send_mail, name="send_mail"),
+    path("auth/callback/", views.auth_callback, name="auth_callback"),
+    path("mail_status/", views.mail_status, name="mail_status"),
+]
+```
+
+---
+
+## 2️⃣ `views.py`
+
+```python
+import msal, requests
+from django.http import JsonResponse, HttpResponseRedirect
+
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+TENANT_ID = "YOUR_TENANT_ID"
+REDIRECT_URI = "http://127.0.0.1:8000/auth/callback/"
+SCOPES = ["Mail.Send", "User.Read"]
+
+# Step 1: Redirect user to Microsoft login
+def send_mail(request):
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+    auth_url = app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+    # Clear previous status in session
+    request.session["mail_status"] = None
+    return HttpResponseRedirect(auth_url)
+
+# Step 2: Callback from Microsoft → send email
+def auth_callback(request):
+    code = request.GET.get("code")
+    if not code:
+        request.session["mail_status"] = {"status": "error", "msg": "No code received"}
+        return HttpResponseRedirect("/mail_status/")
+
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    token_result = app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+
+    if "access_token" not in token_result:
+        request.session["mail_status"] = {"status": "error", "msg": "Token acquisition failed"}
+        return HttpResponseRedirect("/mail_status/")
+
+    access_token = token_result["access_token"]
+
+    # Send email
+    email_payload = {
+        "message": {
+            "subject": "Automatic Email",
+            "body": {"contentType": "Text", "content": "This email was sent automatically!"},
+            "toRecipients": [{"emailAddress": {"address": "recipient@example.com"}}],
+        },
+        "saveToSentItems": "true"
+    }
+
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    r = requests.post("https://graph.microsoft.com/v1.0/me/sendMail", headers=headers, json=email_payload)
+
+    if r.status_code == 202:
+        request.session["mail_status"] = {"status": "success", "msg": "Email sent successfully!"}
+    else:
+        request.session["mail_status"] = {"status": "error", "msg": "Failed to send email", "details": r.text}
+
+    # Redirect back to main page (or wherever JS is polling)
+    return HttpResponseRedirect("/")
+
+# Step 3: JS polls this endpoint for status
+def mail_status(request):
+    status = request.session.get("mail_status")
+    if status:
+        # Optionally clear session after reading
+        del request.session["mail_status"]
+        return JsonResponse(status)
+    else:
+        # Still processing
+        return JsonResponse({"status": "pending", "msg": "Email sending in progress"})
+```
+
+---
+
+## 3️⃣ Frontend JS (polling)
+
+```html
+<button id="sendMailBtn">Send Mail</button>
+<div id="statusBox"></div>
+
+<script>
+document.getElementById("sendMailBtn").addEventListener("click", () => {
+    // Redirect user to start login + send mail
+    window.location.href = "/send_mail/";
+});
+
+// Polling for status every 2 seconds
+function pollStatus() {
+    fetch("/mail_status/")
+        .then(res => res.json())
+        .then(data => {
+            const statusBox = document.getElementById("statusBox");
+            if (data.status === "pending") {
+                statusBox.textContent = "⏳ Email sending in progress...";
+                setTimeout(pollStatus, 2000);
+            } else if (data.status === "success") {
+                statusBox.textContent = "✅ " + data.msg;
+            } else {
+                statusBox.textContent = "❌ " + data.msg;
+            }
+        }).catch(err => console.error(err));
+}
+
+// Start polling automatically (optional)
+pollStatus();
+</script>
+```
+
+---
+
+### ✅ How it works
+
+1. User clicks **Send Mail** → redirected to Microsoft login.
+2. After login → Microsoft redirects to `/auth/callback/`.
+3. Django sends the email and stores result in session.
+4. JS on your main page polls `/mail_status/` → updates the UI when complete.
+
+---
+
+This **eliminates popups** and allows **automatic JS updates** after email is sent.
+
+---
+
+If you want, I can **combine this into a full minimal Django project** with a single page where:
+
+* User clicks “Send Mail”
+* Email is sent after login
+* Status updates automatically on the same page
+
+Do you want me to do that?
