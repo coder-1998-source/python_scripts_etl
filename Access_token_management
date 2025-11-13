@@ -1,0 +1,210 @@
+Perfect 👌 — a reusable **MSAL TokenManager** class will make your Django app much cleaner and handle all token logic (login, refresh, and access).
+
+Here’s the full working setup 👇
+
+---
+
+## 🧱 Folder structure example
+
+```
+project/
+│
+├── app/
+│   ├── views.py
+│   ├── msal_utils.py   ← token manager goes here
+│   └── ...
+│
+├── settings.py
+└── urls.py
+```
+
+---
+
+## ⚙️ Step 1: Create `msal_utils.py`
+
+```python
+# app/msal_utils.py
+import time
+from msal import ConfidentialClientApplication
+
+class TokenManager:
+    def __init__(self, client_id, client_secret, authority, scopes, redirect_uri):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.authority = authority
+        self.scopes = scopes
+        self.redirect_uri = redirect_uri
+
+    def _build_app(self):
+        """Create a new MSAL confidential client."""
+        return ConfidentialClientApplication(
+            client_id=self.client_id,
+            authority=self.authority,
+            client_credential=self.client_secret
+        )
+
+    # ------------------ AUTH FLOW ------------------
+    def get_auth_url(self):
+        """Step 1: Redirect user to Microsoft login page."""
+        app = self._build_app()
+        return app.get_authorization_request_url(
+            scopes=self.scopes,
+            redirect_uri=self.redirect_uri
+        )
+
+    def acquire_tokens_from_code(self, code):
+        """Step 2: After callback, exchange code for tokens."""
+        app = self._build_app()
+        result = app.acquire_token_by_authorization_code(
+            code,
+            scopes=self.scopes,
+            redirect_uri=self.redirect_uri
+        )
+        return result
+
+    # ------------------ TOKEN MANAGEMENT ------------------
+    def get_valid_access_token(self, session):
+        """Step 3: Get a valid access token, refresh if expired."""
+        access_token = session.get('access_token')
+        refresh_token = session.get('refresh_token')
+        expires_in = session.get('expires_in')
+        acquired_at = session.get('token_acquired_at', 0)
+
+        # Refresh token if expired
+        if not access_token or time.time() > acquired_at + expires_in - 60:
+            print("Access token expired — attempting refresh.")
+            new_data = self.refresh_access_token(refresh_token)
+            if new_data and 'access_token' in new_data:
+                session['access_token'] = new_data['access_token']
+                session['refresh_token'] = new_data.get('refresh_token', refresh_token)
+                session['expires_in'] = new_data['expires_in']
+                session['token_acquired_at'] = time.time()
+                return new_data['access_token']
+            else:
+                print("⚠️ Refresh failed. User must re-login.")
+                return None
+        return access_token
+
+    def refresh_access_token(self, refresh_token):
+        """Use refresh token to get a new access token."""
+        if not refresh_token:
+            return None
+        app = self._build_app()
+        result = app.acquire_token_by_refresh_token(refresh_token, scopes=self.scopes)
+        return result if 'access_token' in result else None
+```
+
+---
+
+## ⚙️ Step 2: Use it in `views.py`
+
+```python
+# app/views.py
+from django.shortcuts import redirect, render
+from django.http import JsonResponse
+from .msal_utils import TokenManager
+import requests, time
+
+# Config
+CLIENT_ID = 'your-client-id'
+CLIENT_SECRET = 'your-client-secret'
+AUTHORITY = 'https://login.microsoftonline.com/common'
+REDIRECT_URI = 'http://localhost:8000/getAToken'
+SCOPES = ['User.Read', 'Mail.Send', 'offline_access']
+
+token_mgr = TokenManager(CLIENT_ID, CLIENT_SECRET, AUTHORITY, SCOPES, REDIRECT_URI)
+
+
+def login_view(request):
+    """Redirect to Microsoft login"""
+    auth_url = token_mgr.get_auth_url()
+    return redirect(auth_url)
+
+
+def callback_view(request):
+    """Handle redirect from Microsoft and store tokens"""
+    code = request.GET.get('code')
+    result = token_mgr.acquire_tokens_from_code(code)
+    if 'access_token' in result:
+        request.session['access_token'] = result['access_token']
+        request.session['refresh_token'] = result.get('refresh_token')
+        request.session['expires_in'] = result['expires_in']
+        request.session['token_acquired_at'] = time.time()
+        return redirect('home')
+    else:
+        print("Login failed:", result.get("error_description"))
+        return redirect('login_view')
+
+
+def send_mail_view(request):
+    """Use a valid access token to send mail via Microsoft Graph"""
+    access_token = token_mgr.get_valid_access_token(request.session)
+    if not access_token:
+        return redirect('login_view')  # token refresh failed → re-login
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    mail_data = {
+        "message": {
+            "subject": "Test Email from Django",
+            "body": {"contentType": "Text", "content": "This is a test email."},
+            "toRecipients": [{"emailAddress": {"address": "someone@example.com"}}]
+        },
+        "saveToSentItems": "true"
+    }
+
+    response = requests.post(
+        'https://graph.microsoft.com/v1.0/me/sendMail',
+        headers=headers,
+        json=mail_data
+    )
+
+    if response.status_code == 202:
+        return JsonResponse({'message': '✅ Email sent successfully'})
+    else:
+        return JsonResponse({'error': response.text}, status=response.status_code)
+```
+
+---
+
+## ⚙️ Step 3: Add URLs
+
+```python
+# app/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('login/', views.login_view, name='login_view'),
+    path('getAToken/', views.callback_view, name='callback_view'),
+    path('sendMail/', views.send_mail_view, name='send_mail_view'),
+]
+```
+
+---
+
+## 💡 How it Works
+
+| Step | Action                                          | Managed by                   |
+| ---- | ----------------------------------------------- | ---------------------------- |
+| 1️⃣  | User visits `/login/` → redirected to Microsoft | `get_auth_url()`             |
+| 2️⃣  | Microsoft redirects back with code              | `acquire_tokens_from_code()` |
+| 3️⃣  | Tokens saved in Django session                  | —                            |
+| 4️⃣  | Later, `send_mail_view()` checks validity       | `get_valid_access_token()`   |
+| 5️⃣  | If expired → auto refresh                       | `refresh_access_token()`     |
+| 6️⃣  | Use new token seamlessly                        | —                            |
+
+---
+
+## 🧠 Bonus Tips
+
+✅ Always include `'offline_access'` in your `SCOPES`.
+✅ For background jobs (no user session), you should instead use a **daemon app** (client credentials flow).
+✅ You can easily reuse `TokenManager` for other APIs — just pass different scopes.
+
+---
+
+Would you like me to modify this setup so that it **automatically refreshes the token in the background** (without waiting for send-mail call)? That way, user sessions always stay fresh silently.
