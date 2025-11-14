@@ -1,0 +1,150 @@
+For Microsoft Graph API + Django **with OAuth redirect**, the cookie settings are VERY important because the login flow involves redirects between your site ↔ Microsoft login page.
+If cookies aren’t set properly, the session breaks, and your access/refresh tokens get lost.
+
+Below are the **correct and safe cookie settings** for Django apps that authenticate using Microsoft Login (MSAL).
+
+---
+
+# ✅ **Recommended Cookie Settings (Works for Microsoft Graph + Django)**
+
+Add these in **settings.py**:
+
+```python
+# SESSION CONFIG
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"  # or 'db'
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7    # 7 days
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+# COOKIE FLAGS IMPORTANT FOR MICROSOFT OAUTH
+SESSION_COOKIE_SAMESITE = 'Lax'          # MUST be Lax for OAuth redirects
+SESSION_COOKIE_SECURE = True             # True in production (HTTPS)
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = True
+
+# OPTIONAL: More stability
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False
+```
+
+---
+
+# 🧩 Why these settings?
+
+## 1️⃣ `SESSION_COOKIE_SAMESITE = Lax`
+
+This is the MOST important one.
+
+Microsoft OAuth redirects back to your site after login.
+If you use:
+
+❌ `Strict` → your session cookie is blocked → session lost
+❌ `None` → requires Secure, breaks on non-HTTPS dev environments
+
+✔ **Lax** works perfectly for Microsoft login.
+
+---
+
+## 2️⃣ `SESSION_COOKIE_SECURE = True`
+
+Required for **SameSite=None** and good security, but:
+
+⚠️ During local development on `http://localhost:8000/`
+set it to:
+
+```python
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
+```
+
+Otherwise cookies won’t be stored.
+
+---
+
+## 3️⃣ `SESSION_ENGINE = cached_db` or `db`
+
+Do NOT use:
+
+❌ `signed_cookies`
+Access token + refresh token are too large → cookie overflows → token disappears
+
+So use one of these:
+
+```python
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+# or
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+```
+
+Redis also works great in production.
+
+---
+
+## 4️⃣ `SESSION_SAVE_EVERY_REQUEST = True`
+
+Ensures session timestamp updates and doesn’t expire unnecessarily.
+
+---
+
+# 🔐 Extra: MSAL callback requires HttpOnly cookies
+
+This is good:
+
+```python
+SESSION_COOKIE_HTTPONLY = True
+```
+
+Microsoft redirects don’t need JavaScript to read cookies.
+
+---
+
+# 🍪 Final Safe Configuration (copy/paste)
+
+### For **Production (HTTPS)**
+
+```python
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = True
+```
+
+### For **Local Development (HTTP on localhost)**
+
+```python
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_HTTPONLY = True
+
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = False
+```
+
+---
+
+# 🧪 QUICK TEST (must pass)
+
+After login with Microsoft:
+
+1. Open DevTools → Application → Cookies
+2. Check `sessionid` cookie exists
+3. Check it is SAME across pages (session_key stable)
+4. Access token should be in Django session (`check_session` view)
+
+---
+
+# If you want, I can review your:
+
+✔ `settings.py`
+✔ login redirect URL
+✔ the callback view
+
+…to ensure session + token stability for Microsoft Graph API.
