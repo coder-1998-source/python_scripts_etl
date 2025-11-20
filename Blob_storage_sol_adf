@@ -1,0 +1,220 @@
+Perfect — here is the **complete, ready-to-use Django solution** to read files from Azure Blob Storage that were migrated from your on-prem NAS using Self-Hosted IR + ADF.
+
+This includes:
+
+✔ Architecture
+✔ Required Azure setup
+✔ Best-practice authentication
+✔ Full Django view
+✔ Optional file browsing
+✔ Optional file downloads
+✔ Error handling
+
+---
+
+# ✅ **FINAL END-TO-END Django Solution**
+
+---
+
+# **STEP 1 — Assign Managed Identity (Best practice)**
+
+If your Django app is hosted on:
+
+### ✔ Azure App Service
+
+→ Enable **System Assigned Managed Identity**
+
+Then assign this role on your storage account:
+
+```
+Storage Blob Data Reader
+```
+
+Assign to:
+
+```
+Your-Web-App-Name (Managed Identity)
+```
+
+---
+
+# **STEP 2 — Install Azure SDK**
+
+In your Django project:
+
+```bash
+pip install azure-storage-blob azure-identity
+```
+
+---
+
+# **STEP 3 — Django Settings**
+
+Add this to `settings.py`:
+
+```python
+AZURE_STORAGE_ACCOUNT_URL = "https://<your_storage_account>.blob.core.windows.net"
+AZURE_CONTAINER_NAME = "nasdata"
+```
+
+---
+
+# **STEP 4 — Django Utility to Access Blob**
+
+Create file:
+`utils/azure_blob.py`
+
+```python
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+from django.conf import settings
+
+def get_blob_client(blob_path):
+    credential = DefaultAzureCredential()
+
+    blob_service = BlobServiceClient(
+        account_url=settings.AZURE_STORAGE_ACCOUNT_URL,
+        credential=credential
+    )
+
+    container_client = blob_service.get_container_client(
+        settings.AZURE_CONTAINER_NAME
+    )
+
+    return container_client.get_blob_client(blob_path)
+```
+
+---
+
+# **STEP 5 — Django View: Download or View Blob File**
+
+Create your view in `views.py`:
+
+```python
+from django.http import HttpResponse, Http404
+from .utils.azure_blob import get_blob_client
+
+def read_blob_file(request, blob_path):
+    try:
+        blob = get_blob_client(blob_path)
+
+        # Download file as bytes
+        data = blob.download_blob().readall()
+
+        # Detect content type
+        content_type = blob.get_blob_properties().content_settings.content_type or "application/octet-stream"
+
+        return HttpResponse(data, content_type=content_type)
+
+    except Exception as e:
+        raise Http404(f"Error reading blob: {str(e)}")
+```
+
+This lets your Django app **open any file** in blob storage.
+
+---
+
+# **STEP 6 — URL Mapping**
+
+In `urls.py`:
+
+```python
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("blob/<path:blob_path>/", views.read_blob_file, name="read_blob"),
+]
+```
+
+Now your Django app can read files using a URL like:
+
+```
+http://yourapp.com/blob/folder1/sample.pdf
+```
+
+---
+
+# **STEP 7 — Browse Blob Folder (Optional but useful)**
+
+Add a folder listing API:
+
+```python
+def list_blob_files(request, prefix=""):
+    from azure.identity import DefaultAzureCredential
+    from azure.storage.blob import BlobServiceClient
+    from django.conf import settings
+
+    credential = DefaultAzureCredential()
+    blob_service = BlobServiceClient(
+        account_url=settings.AZURE_STORAGE_ACCOUNT_URL,
+        credential=credential
+    )
+    container = blob_service.get_container_client(settings.AZURE_CONTAINER_NAME)
+
+    files = []
+    for blob in container.list_blobs(name_starts_with=prefix):
+        files.append(blob.name)
+
+    return HttpResponse("<br>".join(files))
+```
+
+---
+
+# **STEP 8 — Optional: Force File Download**
+
+Modify the response:
+
+```python
+return HttpResponse(
+    data,
+    content_type=content_type,
+    headers={"Content-Disposition": f'attachment; filename="{blob_path.split("/")[-1]}"'}
+)
+```
+
+---
+
+# **STEP 9 — Django Access Logic Overview**
+
+```
+NAS (On-Prem)
+    |
+    | Self-hosted IR
+    v
+Azure Data Factory (Copy Activity)
+    |
+    v
+Azure Blob Storage (nasdata container)
+    |
+    | Managed Identity (secure)
+    v
+Django Web App
+    |
+    v
+Read & display/download files
+```
+
+---
+
+# 🔥 **You Now Have:**
+
+✔ IR + ADF copy from NAS → Blob
+✔ Django code to read any blob file
+✔ Secure authentication using Managed Identity
+✔ Support for viewing, downloading, or browsing files
+✔ Fully production-ready logic
+
+---
+
+# ❓ Want me to customise?
+
+I can generate:
+
+✅ API for listing folders + files
+✅ HTML template for browsing files
+✅ Upload logic from Django to Blob
+✅ Cache layer for better performance
+✅ Generate SAS tokens for public temporary file access
+
+Tell me what exact UI/logic you want!
