@@ -1,0 +1,34 @@
+import requests
+import pandas as pd
+
+# Your existing access token
+access_token = "YOUR_ACCESS_TOKEN"
+
+# List of employee IDs
+employee_ids = ["123", "456", "789"]
+
+employee_data = []
+
+# Loop through each employee ID
+for emp_id in employee_ids:
+    url = f"https://graph.microsoft.com/v1.0/users?$filter=employeeId eq '{emp_id}'&$select=displayName,employeeId,officeLocation"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        users = response.json().get('value', [])
+        if users:
+            user = users[0]
+            employee_data.append({
+                "EmployeeId": user['employeeId'],
+                "EmployeeName": user['displayName'],
+                "EmployeeLocation": user.get('officeLocation', None)
+            })
+    else:
+        print(f"Error fetching {emp_id}: {response.status_code} - {response.text}")
+
+# Convert to DataFrame
+df = pd.DataFrame(employee_data)
+print(df)
