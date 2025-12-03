@@ -1,0 +1,199 @@
+Great — here is the **full, clean, production-grade architecture diagram + explanation** for your use case:
+
+---
+
+# 🧩 **End-to-End Architecture (Best Practice)**
+
+**NAS → SHIR → ADF → Blob → Databricks → Azure SQL DB → Triggered by Django**
+
+```
+ ┌────────────┐        ┌─────────────┐        ┌─────────────────┐
+ │  On-Prem    │        │ Self-Hosted │        │ Azure Data       │
+ │    NAS      │──Files→│ Integration │──Copy→ │ Factory (ADF)    │
+ │ (File Share)│        │   Runtime   │        │ Pipeline         │
+ └────────────┘        └─────────────┘        └──────┬──────────┘
+                                                       │
+                                               GetMetadata (file list)
+                                                       │
+                                                  ForEach Activity
+                                                       │ (parallel)
+                                 ┌──────────────────────┴────────────────────────┐
+                                 │                                               │
+                              Stage files                                Databricks Notebook
+                                 Blob Storage  ←───────ADF──────→    (Python / PySpark Transform)
+                                 │                                               │
+                                 └────────────────▶ Write transformed data ──────┘
+                                                               │
+                                                        Azure SQL Database
+                                                               │
+                                                        Business Application
+                                                        (Django Web App)
+```
+
+---
+
+# 🧠 **How it works step-by-step (with best practices)**
+
+---
+
+## **1️⃣ SHIR reads from On-Prem NAS**
+
+* SHIR is installed on a VM or server that has access to your NAS share (`\\server\folder`).
+* ADF sends commands to SHIR to pull the files.
+* No need to open inbound firewall ports.
+
+**Why?**
+SHIR ensures secure and reliable on-prem → cloud file movement.
+
+---
+
+## **2️⃣ ADF Pipeline Orchestration**
+
+ADF handles all job scheduling & workflows.
+
+### ADF pipeline contains:
+
+1. **GetMetadata**
+
+   * Reads the NAS folder structure
+   * Returns file list
+
+2. **ForEach Activity**
+
+   * Loops through each file
+   * Parallel execution enabled (important for speed)
+
+3. Inside ForEach:
+
+   * **Copy Activity** (NAS → Blob Storage)
+   * **Databricks Notebook Activity** (pass blob file path as parameter)
+
+---
+
+## **3️⃣ Transform Using Databricks Notebook**
+
+Inside Databricks notebook (Python/PySpark):
+
+```python
+df = spark.read.csv(input_file, header=True, inferSchema=True)
+
+# Transform your data
+df_transformed = df.withColumn("processed_date", current_timestamp())
+
+# Write final data for loading
+df_transformed.write \
+    .mode("overwrite") \
+    .format("parquet") \
+    .save(temp_output_path)
+```
+
+### Why Databricks?
+
+* Handles **large datasets**
+* Supports **distributed processing**
+* Avoids Django timeout/OOM
+* Easy to connect to Azure SQL
+
+---
+
+## **4️⃣ Load Data into Azure SQL DB**
+
+Two recommended methods:
+
+### ✔ Method A: Databricks → Azure SQL using JDBC
+
+```python
+df_transformed.write \
+    .mode("append") \
+    .format("jdbc") \
+    .option("url", jdbc_url) \
+    .option("dbtable", "dbo.MyTable") \
+    .option("user", username) \
+    .option("password", password) \
+    .save()
+```
+
+### ✔ Method B (faster for large loads):
+
+Databricks writes Parquet → ADF bulk loads using **Copy Activity** or **PolyBase**.
+
+---
+
+## **5️⃣ Django Web App triggers ADF**
+
+Your app **does NOT perform ETL**.
+It only **triggers ADF** and displays job status.
+
+### Django triggers ADF pipeline:
+
+```python
+import requests
+
+url = f"https://management.azure.com/subscriptions/{sub_id}/resourceGroups/{rg}/providers/Microsoft.DataFactory/factories/{factory}/pipelines/{pipeline}/createRun?api-version=2018-06-01"
+
+headers = {"Authorization": f"Bearer {access_token}"}
+
+response = requests.post(url, json={"file_path": "/input/run1"}, headers=headers)
+```
+
+### Django UI shows:
+
+* Pipeline run status
+* Logs
+* Success / Failure
+* Last run time
+
+---
+
+# 🏆 Why this architecture is best
+
+### **✔ Fully scalable**
+
+Handles thousands of files, large datasets.
+
+### **✔ Zero load on Django**
+
+ETL does NOT block your web server.
+
+### **✔ Enterprise reliability**
+
+ADF → retry logic
+Databricks → distributed job processing
+SQL DB → stable target
+
+### **✔ Easy Monitoring**
+
+ADF run history
+Databricks job logs
+Alerts to email / Teams
+
+### **✔ Secure**
+
+No direct DB/file access from Django
+Everything behind MI/SPN
+
+---
+
+# 🎯 Summary Recommendation
+
+| Feature             | Django Transform | ADF + Databricks |
+| ------------------- | ---------------- | ---------------- |
+| Large File Handling | ❌ No             | ✔ Yes            |
+| Parallel Processing | ❌ No             | ✔ Yes            |
+| Long Running Jobs   | ❌ Breaks         | ✔ Supported      |
+| Reliability         | ❌ Low            | ✔ High           |
+| Monitoring          | ❌ Manual         | ✔ Built-In       |
+| Enterprise Ready    | ❌ No             | ✔ Yes            |
+
+👉 **Always choose: SHIR + ADF + Databricks + SQL**
+👉 Django = UI + trigger + monitoring only
+
+---
+
+If you want, I can also give you:
+
+✅ ADF pipeline JSON
+✅ Databricks notebook code
+✅ Django trigger code (end-to-end)
+✅ Full diagram in PNG
+Just tell me!
