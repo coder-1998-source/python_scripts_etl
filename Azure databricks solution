@@ -1,0 +1,213 @@
+Below is the **complete, clean, production-ready architecture** for your exact requirement:
+
+---
+
+# ⭐ **Final End-to-End Architecture**
+
+**(User → Django → ADF → SHIR → NAS → Databricks → Azure SQL DB)**
+
+---
+
+# 🧩 **Solution Architecture Diagram (Text Diagram)**
+
+```
+                  ┌────────────────────────────────────────┐
+                  │            Django Web App               │
+                  │  - User selects Month, Date Range,      │
+                  │    Business                             │
+                  │  - Triggers ADF Pipeline with params    │
+                  └───────────────┬────────────────────────┘
+                                  │ REST API Call
+                                  ▼
+            ┌──────────────────────────────────────────────┐
+            │          Azure Data Factory (ADF)             │
+            │   Pipeline with parameters:                   │
+            │     • month                                   │
+            │     • from_date                               │
+            │     • to_date                                 │
+            │     • business                                │
+            └───────┬───────────────────────────────────────┘
+                    │
+                    │ (1) Build dynamic NAS path using params
+                    ▼
+      ┌────────────────────────────────────────────────────────┐
+      │              On-Prem Self-Hosted IR (SHIR)             │
+      │ Connects securely to NAS folder                        │
+      │ Reads metadata & files (ADF → SHIR → NAS)              │
+      └───────────────┬────────────────────────────────────────┘
+                      │
+                      │ (2) GetMetadata (list files in NAS dir)
+                      ▼
+              ┌──────────────────────────────────┐
+              │       Filter Activity             │
+              │ Filters files by:                 │
+              │   - Date Range (lastModified)     │
+              │   - Business folder               │
+              │   - Month folder                  │
+              └───────────┬──────────────────────┘
+                          │
+                          │ (3) ForEach filtered file
+                          ▼
+       ┌──────────────────────────────────────────────────────────┐
+       │                      ADF Copy Activity                   │
+       │       File from NAS → Blob Storage (Staging Zone)        │
+       └──────────────────────┬───────────────────────────────────┘
+                              │
+                              │ (4) Pass each file path to Notebook
+                              ▼
+            ┌──────────────────────────────────────────────┐
+            │               Azure Databricks                │
+            │     Python / PySpark Transformation           │
+            │                                               │
+            │  Steps:                                       │
+            │   - Read blob file                            │
+            │   - Apply transformations                     │
+            │   - Attach metadata (month, business, etc.)   │
+            │   - Validate data                             │
+            │   - Prepare cleaned final DataFrame           │
+            └───────────────┬──────────────────────────────┘
+                            │
+                            │ (5) Write final data
+                            ▼
+        ┌────────────────────────────────────────────────────────┐
+        │                     Azure SQL Database                  │
+        │ Final table insertion via JDBC/Bulk Insert             │
+        └────────────────────────────────────────────────────────┘
+
+                              │
+                              │ (6) Job status returned to web
+                              ▼
+             ┌──────────────────────────────────────────────┐
+             │                  Django UI                    │
+             │  Shows:                                        │
+             │   - Success / Failure                          │
+             │   - Pipeline Run ID                            │
+             │   - Processed File Count                       │
+             └──────────────────────────────────────────────┘
+```
+
+---
+
+# 🔥 **Architecture Explanation**
+
+## **1. User selects inputs (Month, Date Range, Business)**
+
+These values decide which NAS folder & which files to pick.
+
+Examples:
+
+```
+Business = Retail
+Month = JAN
+Date Range = 2025-01-01 → 2025-01-31
+```
+
+---
+
+## **2. Django triggers ADF pipeline (REST API)**
+
+Django sends the above parameters as JSON to ADF.
+
+---
+
+## **3. ADF builds dynamic NAS path**
+
+Using SHIR:
+
+Example path:
+
+```
+\\NAS\Retail\2025\JAN\
+```
+
+---
+
+## **4. ADF GetMetadata lists all files inside the NAS folder**
+
+Example NAS folder:
+
+```
+File_A_2025-01-05.csv
+File_B_2025-01-10.csv
+File_C_2025-01-25.csv
+```
+
+---
+
+## **5. Filter Activity filters files using:**
+
+* File Modified Date between from_date & to_date
+* Folder name matches business
+* Folder name matches month
+
+---
+
+## **6. ForEach processes files in parallel**
+
+Inside ForEach:
+
+### Step 1: Copy Activity
+
+NAS → Blob Storage (Staging folder)
+
+### Step 2: Databricks Notebook
+
+Pass parameters:
+
+* File path
+* Month
+* Business
+
+---
+
+## **7. Databricks transforms data**
+
+Using Python / PySpark:
+
+* Data validations
+* Cleaning
+* Column renaming
+* Adding metadata columns (Month, Business)
+* Final DataFrame ready for SQL load
+
+---
+
+## **8. Databricks loads into Azure SQL DB**
+
+Using JDBC or bulk insert.
+
+---
+
+## **9. Django displays job status**
+
+Django fetches:
+
+* Run ID
+* Status: Running, Failed, Succeeded
+* Number of files processed
+
+---
+
+# 🏆 Why this architecture is best?
+
+| Feature                  | Django ETL | ADF + SHIR + Databricks |
+| ------------------------ | ---------- | ----------------------- |
+| Handles large files      | ❌ No       | ✔ Yes                   |
+| Enterprise reliability   | ❌ Low      | ✔ High                  |
+| Parallel file processing | ❌ No       | ✔ Yes                   |
+| Monitoring & Alerts      | ❌ None     | ✔ Built-in              |
+| Long running workflows   | ❌ Timeouts | ✔ Strong                |
+| On-prem connectivity     | ❌ No       | ✔ SHIR                  |
+
+➡️ **ADF + SHIR + Databricks = Enterprise ETL standard**
+➡️ **Django = orchestration only (Trigger + monitor)**
+
+---
+
+# 🎁 Want a Visual PNG Diagram?
+
+I can generate a **visual architecture diagram** that you can use in PPT, documentation, or internal review.
+
+Just tell me:
+
+**"Generate PNG diagram"**
