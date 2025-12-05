@@ -1,0 +1,35 @@
+result = (
+    BaseData.objects
+    .filter(
+        wflw__smp_id=work_flow_id,
+        review_type=review_type_string
+    )
+    .select_related("wflw")        # INNER JOIN SampleData
+    .prefetch_related("wflw__additional_fields")   # LEFT JOIN AdditionalFieldData
+    .values(
+        # BaseData fields
+        "wflw__smp_id",
+        "base_act_datetime",
+        "work_item_id",
+        "emp_ps_id",
+        "work_item_dt",
+        "status_name",
+        "qw_result",
+        "review_comments",
+        "edit_review_comments",
+        "analyst_comments",
+
+        # SampleData fields (INNER JOIN)
+        "wflw__region",
+        "wflw__country",
+        "wflw__process",
+        "wflw__lob",
+        "wflw__inv_levl",
+        "wflw__alert_type",
+
+        # Additional fields (LEFT JOIN)
+        "wflw__additional_fields__addtnl_field_name",
+        "wflw__additional_fields__addtnl_field_val",
+    )
+    .distinct()
+)
